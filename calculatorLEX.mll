@@ -9,6 +9,13 @@ rule token = parse
     [' ' '\t' '\n'] { token lexbuf } (* skip blanks and tabs *)
   | "var"      {VARDEF}
   | "proc"      {PROCDEF}
+  | "if"        {IFDEF}
+  | "then"      {THENDEF}
+  | "else"      {ELSEDEF}
+  | "while"     {WHILEDEF}
+  | "true"      {TRUEDEF}
+  | "false"     {FALSEDEF}
+  | "malloc"     {MALLOCDEF}
   | (['a'-'z'])(['a'-'z'] | ['A'-'Z'] | ['0'-'9'])* as var
                { VAR var }
   | (['A'-'Z'])(['a'-'z'] | ['A'-'Z'] | ['0'-'9'])* as fld
@@ -17,6 +24,9 @@ rule token = parse
                { NUM (int_of_string num) }
   | ';'        { SEMICOLON }
   | ':'        { COLON}
+  | '.'         {DOT}
+  | "=="        {EQUAL}
+  | "<"         {LIGHTER}
   | '='        { ASSIGN }
   | '+'        { PLUS }
   | '-'        { MINUS }

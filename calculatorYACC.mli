@@ -13,6 +13,16 @@ type token =
   | FIELD of ( string )
   | VARDEF
   | PROCDEF
+  | IFDEF
+  | ELSEDEF
+  | WHILEDEF
+  | TRUEDEF
+  | FALSEDEF
+  | THENDEF
+  | EQUAL
+  | LIGHTER
+  | MALLOCDEF
+  | DOT
   | NUM of ( int )
 
 val prog :
