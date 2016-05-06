@@ -22,13 +22,8 @@ type token =
   | EQUAL
   | LIGHTER
   | MALLOCDEF
-  | SKIPDEF
-  | PARALLEL
   | DOT
   | END
-  | LBRACKET
-  | RBRACKET
-  | ATOMDEF
   | NUM of ( int )
 
 val prog :

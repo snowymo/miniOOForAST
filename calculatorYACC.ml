@@ -22,7 +22,13 @@ type token =
   | EQUAL
   | LIGHTER
   | MALLOCDEF
+  | SKIPDEF
+  | PARALLEL
   | DOT
+  | END
+  | LBRACKET
+  | RBRACKET
+  | ATOMDEF
   | NUM of ( int )
 
 open Parsing;;
@@ -31,48 +37,123 @@ let _ = parse_error;;
  (* header *)
 (* unused *)
 let returnProc = -1;;
-(* used *)
+let procId : int ref = ref 0;;  (* indicates the fid of procedure *)
+let varId : int ref = ref 0;;
+type procList = (int * string) list;; (* proc fid and proc name *)
+let prl = ref([] : procList) ;;
+type varList = (string * ( string * int)) list ;; (* var name, for procedure using, 'y' for value and 'n' for future assignment *)
+let vl = ref( [] : varList);;
+let g_lSb = ref([] : procList);;  (*symbol list: fid, name*)
 let returnNum = -2;;
+
+(* in use *)
 let g_stType : string ref = ref "nil";; (* indicates the type of var *)
 let g_stPara : string ref = ref "nil";; (* indicates the name of the parameter *)
-let procId : int ref = ref 0;;  (* indicates the fid of procedure *)
+
 let cmdId : int ref = ref 0;;  (* indicates the fid of cmd, when cmd does not have a value then, it might be a part of a proc, so let's generate an fid for it *)
-let varId : int ref = ref 0;;
+
 let procToRun : string ref = ref "nil";;
 let isCmdInProc : bool ref = ref false;;    (* flag that if some par no show, it could be cmd in proc *)
 let cmpop : string ref = ref "nil";;
-  
+
   (* variable name + defined or not + type + value *)
 type symbTable = (string * (string * (string * int))) list ;; (* if it is proc then the value is the cmdid of what to run first *)
-
 let g_tSb = ref([] : symbTable) ;;
 
 type procTable =  (string * (string * int))  list ;; (*proc name and parameter name and cmd idx*)
-type procList = (int * string) list;; (* proc fid and proc name *)
 let g_tProc = ref([] : procTable) ;;
-let prl = ref([] : procList) ;;
+
 type procCntTable = (int * (int * int)) list;; (*proc fid * proc name cmd fid * parameter cmd fid *)
 let g_tProcCnt = ref([] : procCntTable);;
 
 type binOpTable = (int * (string * (int * int))) list ;;  (* fid ( op ( a,b))*)
 let g_tBop = ref([] : binOpTable);;
 
-type assignTable = (int * (string * int)) list ;; (* fid ( a = b) b is idx of cmd*)
-let asstbl = ref([] : assignTable);;
+type assignTable = (int * (int * int)) list ;; (* fid ( a = b) *)
+let g_tAssign = ref([] : assignTable);;
 
-type varList = (string * ( string * int)) list ;; (* var name, for procedure using, 'y' for value and 'n' for future assignment *)
-let g_lVar = ref([]: procList);;  (*variable list: fid, name*)
-let vl = ref( [] : varList);;
-let g_lSb = ref([] : procList);;  (*symbol list: fid, name*)
+type variableList = (int * string) list;; (* id and name *)
+let g_lVar = ref([]: variableList);;  (*variable list: var id, name*)
 
 type numList = (int * int) list;;(* cmd fid, value*)
 let g_lNum = ref([] : numList);;
 
 type cmdTable = (int * string) list ;; (*cmd fid, cmd type*)
-let g_lCmd = ref([] : cmdTable);;
+let g_tCmd = ref([] : cmdTable);;
 
 type condTable = (int * (int *( int * int))) list;; (*cmd fid, if cmd fid, then cmd fid, else cmd fid*)
 let g_lCond = ref([] : condTable);;
+
+(* new version *)
+type heapTable = (int * ( string * (string * int))) list;; (* pos(var,(field,value)) *)
+let g_tHeap = ref([] : heapTable);;
+let g_tHeapAtom = ref([] : heapTable);;
+
+type envMap = (string * int) list;;   (* name,pos *)
+let g_mEnv = ref([] : envMap);;
+
+type stackTable = (int * (string * int )) list;; (* stack id ( var name ( pos in heap)*)
+let g_tStack = ref([] : stackTable);;
+
+type closureTable = (int * (string * ( int * int))) list;; (* closure id ( parameter ( body cmd id , stack id)) *)
+let g_tClo = ref([] :closureTable);;
+
+type procedureTable = (int * ( int * int)) list;; (* proc/cmd id ( proc name cmd id, para cmd id) *)
+let g_tProcedure = ref([] : procedureTable);;
+
+type conditionTable = (int * (int *( int * int))) list;; (*cmd fid, if cmd fid, then cmd fid, else cmd fid*)
+let g_tCond = ref([] : conditionTable);;
+
+type whileTable = (int * (int * int)) list;; (* while id, cond id, cmd id *)
+let g_tWhile = ref([] : whileTable);;
+
+type seqTable = (int * (int * int)) list;; (* seq id, 1st id, 2nd id *)
+let g_tSeq = ref([] : seqTable);;
+
+type varDefTable = (int * string) list;;   (* def id, var id *)
+let g_tVardef = ref([] : varDefTable);;
+
+type atomTable = (int * ( int * int)) list;;
+let g_tAtom = ref([] : atomTable);;
+let g_tParallel = ref([] : atomTable);;
+
+let g_nStackId : int ref = ref 0;;
+let g_nHeapCmdId : int ref = ref 0;;
+let g_bInProc : bool ref = ref false;;
+let g_sPara : string ref = ref "";;
+let g_iPara : int ref = ref (-1);;
+let g_bAtom : bool ref = ref false;;
+
+
+let rec printStackHelp l = (
+    match l with
+    [] -> print_newline()
+    | h::t -> (print_string ("stack:\t" ^ (string_of_int (fst h)) ^ "\t" ^
+                  (fst (snd h)) ^ "\t" ^ (string_of_int (snd (snd h))) ^ "\n"); 
+        printStackHelp t)
+  );;
+
+let printStack () = (
+    printStackHelp !g_tStack
+  );;
+
+let rec printHeapHelp l = (
+    match l with
+    [] -> print_newline()
+    | h::t -> (print_string ("heap :\t" ^ (string_of_int (fst h)) ^ "\t" ^
+                  (fst (snd h)) ^ "\t" ^ (fst (snd (snd h))) ^ "\t" ^(string_of_int (snd (snd (snd h)))) ^ "\n"); 
+        printHeapHelp t)
+  );;
+
+let printHeap () = (
+    print_string ("HEAP:\n");
+    printHeapHelp !g_tHeap
+  );;
+
+let printHeapAtom () = (
+    print_string ("HEAP ATOM:\n");
+    printHeapHelp !g_tHeapAtom
+  );;
 
 let output x = (print_string(x); print_newline(); flush stdout; )
   ;;
@@ -147,8 +228,8 @@ let addVar variable =
     else(
         let i = (generateId cmdId) in (
           g_lVar := (i,variable) :: !g_lVar;
-          g_lCmd := (i, "var") :: !g_lCmd;
-          printCmdList !g_lCmd;
+          g_tCmd := (i, "var") :: !g_tCmd;
+          printCmdList !g_tCmd;
           if( List.mem_assoc variable !g_tSb) then(
             
           )
@@ -189,9 +270,9 @@ let getvalue x =
 
 
 let getValueByCmd v = 
-  if(List.mem_assoc v !g_lCmd) then
+  if(List.mem_assoc v !g_tCmd) then
 (
-  match (List.assoc v !g_lCmd) with
+  match (List.assoc v !g_tCmd) with
     "num" -> (getValueFromNum v)
   | "var" -> (getvalue  (List.assoc v !g_lVar))
   | "true" -> (print_string("it is true.\n");1024)
@@ -207,8 +288,8 @@ let handleNum n = (
   let newid = generateId cmdId in (
     g_lNum := (newid,n) :: !g_lNum;
     printNumList !g_lNum;
-    g_lCmd := (newid, "num") :: !g_lCmd;
-    printCmdList !g_lCmd;
+    g_tCmd := (newid, "num") :: !g_tCmd;
+    printCmdList !g_tCmd;
     newid
     )
   );;
@@ -229,7 +310,7 @@ let handleAssignNProc x t value =
 ) ;;
 
 let declareProc pid p y c = 
-  g_lCmd := (pid, "proc") :: !g_lCmd;
+  g_tCmd := (pid, "proc") :: !g_tCmd;
   print_string ("now in declare proc.\n");
   if( List.mem_assoc pid !prl) then
     prl := (pid,p) :: (except (pid, (List.assoc pid !prl)) !prl)
@@ -239,7 +320,7 @@ let declareProc pid p y c =
   ;;
 
 let handleAssignInHelp cid = (
-    match List.assoc cid !g_lCmd with
+    match List.assoc cid !g_tCmd with
     "num" -> cid
     | "var" -> handleNum (getValueByCmd cid)
     | "field" -> (
@@ -252,38 +333,7 @@ let handleAssignInHelp cid = (
     | _ -> cid
   );;
 
-let handleAssignInProc x t value = 
-(
-  print_string (x ^ "\tcmd: ");
-  print_int (value);
-  print_string("\tin proc now.\n");
-  flush stdout;
-  if(t = "proc") then(
-    let newx = (x, ("D",(t, value))) in
-        (      
-          g_tSb := newx :: (except (x,(List.assoc x !g_tSb)) !g_tSb);
-          let genProcId = generateId cmdId in
-              declareProc genProcId x !g_stPara value;
-          printProc !g_tProc;
-          isCmdInProc := false;
-          genProcId
-        ) 
-    )
-  else(
-    let _cmdid = generateId cmdId in
-    (asstbl := (_cmdid, (x,handleAssignInHelp value)) :: !asstbl; printASS !asstbl; print_newline();
-      g_lCmd := (_cmdid, "ass") :: !g_lCmd;
-      _cmdid)
-  ) 
-) ;;
 
-let handleAssign x t v = 
-(print_string (x ^ " = cmd:"); print_int (v);print_string ";\n"; 
-   if( !isCmdInProc = false) then (
-      handleAssignNProc x t v) 
-   else(
-      handleAssignInProc x t v)
-  );;
 
 let declareVar x=
   if( List.mem_assoc x !g_tSb) then(
@@ -348,23 +398,23 @@ let handleNum n = (
   let newid = generateId cmdId in (
     g_lNum := (newid,n) :: !g_lNum;
     printNumList !g_lNum;
-    g_lCmd := (newid, "num") :: !g_lCmd;
-    printCmdList !g_lCmd;
+    g_tCmd := (newid, "num") :: !g_tCmd;
+    printCmdList !g_tCmd;
     newid
     )
   );;
 
 let addDirectCmd direct = (
     let i = generateId cmdId in(
-        g_lCmd := (i,direct) :: !g_lCmd;
-        printCmdList !g_lCmd;
+        g_tCmd := (i,direct) :: !g_tCmd;
+        printCmdList !g_tCmd;
         i)
   )
 ;;
 
 let extractBop varid = (
-  if(List.mem_assoc varid !g_lCmd) then(
-    match List.assoc varid !g_lCmd with
+  if(List.mem_assoc varid !g_tCmd) then(
+    match List.assoc varid !g_tCmd with
     "num" -> let ret = List.assoc varid !g_lNum in (print_string ("num of " ^ (string_of_int varid) ^ " : " ^ (string_of_int ret) ^ "\n"); ret)
     | "var" -> let ret = (List.assoc (snd(snd(List.assoc (List.assoc varid !g_lVar) !g_tSb))) !g_lNum) in (print_string ("var:\t" ^ (string_of_int ret) ^ "\n");ret)
     | _ -> print_string ("not valid type.\n"); -1
@@ -401,7 +451,7 @@ let handleBop cid = (
     );;
 
 let rec setProcParaHelp pnm pval = (
-    if(List.assoc pval !g_lCmd = "binop") then
+    if(List.assoc pval !g_tCmd = "binop") then
       handleBop pval
     else
       pval
@@ -417,68 +467,6 @@ let rec setProcPara pnm pval = (
       )
   );;
 
-let rec handleCmd  cid = (
-  match List.assoc cid !g_lCmd with
-  "ass" -> (
-      let (lft,rit) = (List.assoc cid !asstbl) in
-      (* by default, rit is a cmid fid *)
-        (print_string ("assignment:\t" ^ lft ^ " = cmd: " ^ (string_of_int rit) ^ "\n");
-            let ret = handleCmd rit in
-                if(List.mem_assoc lft !g_tSb) then
-                  (g_tSb := (lft,("D",("int", ret))) :: (except (lft, (List.assoc lft !g_tSb)) !g_tSb);)
-                else
-                  g_tSb := (lft,("D",("int", ret))) :: !g_tSb;
-                printsb !g_tSb;
-
-                ret
-              )
-      )
-  |"num" -> (
-      getValueByCmd cid
-    )
-  |"binop" -> (
-      let ret = (handleBop cid) in
-                (print_int ret;
-                  print_newline();
-                          ret)
-    )
-  |"rec" ->(
-      let (pid,paraid) = List.assoc cid !g_tProcCnt in(
-          print_string ("handleCmd:" ^ (string_of_int (cid)) ^ " with paraid:" ^ (string_of_int paraid) ^ "\n");
-          let stPName = List.assoc pid !g_lVar in
-          (
-            let (_para,_cmdid) = (List.assoc stPName !g_tProc) in
-                    (
-                      print_string ("para name:" ^ _para ^ "\trun cmd:" ^ (string_of_int _cmdid) ^ "\n");
-                      setProcPara _para paraid;
-                      printsb !g_tSb;
-                      handleCmd _cmdid
-                    )
-          )
-        )
-    )
-  |"cond" ->(
-      let (ifid,(thenid,elseid)) = List.assoc cid !g_lCond in
-      (
-          let ifans = handleCmd ifid in
-          (
-              if (List.assoc ifans !g_lCmd) = "true" then(
-                  print_string ("cond\ttrue:\t" ^ (string_of_int (thenid)) ^ "\n");
-                  handleCmd thenid
-                )
-              else(
-                  print_string ("cond\tfalse:\t" ^ (string_of_int (elseid)) ^ "\n");
-                  handleCmd elseid
-                )
-            )
-        )
-    )
-  |"field" -> (
-      getvalue (List.assoc cid !g_lVar)
-    )
-  |_ -> print_string ("cmd not found in bop.\n");-1
-  ) ;;
-
 let rec setParaVal paraname paravalue = (
   if(List.mem_assoc paraname !vl) then(
       vl := (paraname,("y", paravalue)) :: (except (paraname, List.assoc paraname !vl) !vl)
@@ -486,33 +474,6 @@ let rec setParaVal paraname paravalue = (
   ) ;;
 
 
-
-let handleProc pname para = (
-  (* run cmd pname and set para as the parameter *)
-  if(List.mem_assoc !procToRun !g_tProc) then 
-  (
-    let (_para,_cmdid) = (List.assoc !procToRun !g_tProc) in
-      (print_string ("para: " ^ _para ^ "=");
-      print_int para;
-      setProcPara _para para;
-      print_string ("\nrun cmd: ");
-      print_int _cmdid;
-      print_newline();
-      let ret = handleCmd _cmdid in(
-          getValueByCmd ret
-        )
-      )
-    )
-  else(
-    (* call the procedure before finished declaration*)
-    let newid = generateId cmdId in(
-        g_lCmd := (newid, "rec") :: !g_lCmd;
-        printCmdList !g_lCmd;
-        g_tProcCnt := (newid,(pname,para)) :: !g_tProcCnt;
-        newid
-      )
-    )
-  );;
 
 let cal a op b = (
   match op with
@@ -536,8 +497,8 @@ if((List.mem_assoc name list)
   ;;
 
 let checkPara paraid = (
-  if(List.mem_assoc paraid !g_lCmd) then(
-      let cmdtype = List.assoc paraid !g_lCmd in
+  if(List.mem_assoc paraid !g_tCmd) then(
+      let cmdtype = List.assoc paraid !g_tCmd in
       match cmdtype with
       "var" -> checkParameter (List.assoc paraid !g_lVar) !g_tSb
       |"num" -> true
@@ -555,21 +516,21 @@ let handleHelp sta a =
       let newid = generateId cmdId in (
        g_lNum := (newid,snd(snd(List.assoc sta !g_tSb))) :: !g_lNum;
        printNumList !g_lNum;
-       g_lCmd := (newid, "num") :: !g_lCmd;
-       printCmdList !g_lCmd;
+       g_tCmd := (newid, "num") :: !g_tCmd;
+       printCmdList !g_tCmd;
        newid
       )
     )
   else(
-       g_lCmd := (a, "var") :: (except (a, (List.assoc a !g_lCmd)) !g_lCmd);
-       printCmdList !g_lCmd;
+       g_tCmd := (a, "var") :: (except (a, (List.assoc a !g_tCmd)) !g_tCmd);
+       printCmdList !g_tCmd;
        a
       )
     ;;
 
 let handleBinHelp inta = (
-      if(List.mem_assoc inta !g_lCmd) then(
-          let cmdtype = List.assoc inta !g_lCmd in
+      if(List.mem_assoc inta !g_tCmd) then(
+          let cmdtype = List.assoc inta !g_tCmd in
           match cmdtype with
           "var" -> (
               if (checkParameter (List.assoc inta !g_lVar) !g_tSb) then
@@ -578,15 +539,15 @@ let handleBinHelp inta = (
                           print_string ((string_of_int inta) ^ " is  assigned.\n");
                           g_lNum := (newid,getValueByCmd inta) :: !g_lNum;
                           printNumList !g_lNum;
-                          g_lCmd := (newid, "num") :: !g_lCmd;
-                          printCmdList !g_lCmd;
+                          g_tCmd := (newid, "num") :: !g_tCmd;
+                          printCmdList !g_tCmd;
                           newid
                       )
                     )
                 else(
                     print_string ((string_of_int inta) ^ " is not already assigned.\n");
-                    g_lCmd := (inta, "var") :: (except (inta, (List.assoc inta !g_lCmd)) !g_lCmd);
-                    printCmdList !g_lCmd;
+                    g_tCmd := (inta, "var") :: (except (inta, (List.assoc inta !g_tCmd)) !g_tCmd);
+                    printCmdList !g_tCmd;
                     inta
                   )
             )
@@ -611,8 +572,8 @@ let handleBinop a op b = (
           print_string ("not found all the parameter.\n");
           let i = generateId cmdId in(
             g_tBop := (i,(op,(handleBinHelp a,handleBinHelp b))) :: !g_tBop;
-            g_lCmd := (i, "binop") :: !g_lCmd;
-            printCmdList !g_lCmd;
+            g_tCmd := (i, "binop") :: !g_tCmd;
+            printCmdList !g_tCmd;
             printBOP !g_tBop;
             isCmdInProc := true;
             i
@@ -624,14 +585,14 @@ let handleBinop a op b = (
 let handleEqualHelper left right = (
   if(left = right) then
       (let i = generateId cmdId in(
-        g_lCmd := (i,"true") :: !g_lCmd;
-        printCmdList !g_lCmd;
+        g_tCmd := (i,"true") :: !g_tCmd;
+        printCmdList !g_tCmd;
         i)
       )
     else
       (let i = generateId cmdId in(
-        g_lCmd := (i,"false") :: !g_lCmd;
-        printCmdList !g_lCmd;
+        g_tCmd := (i,"false") :: !g_tCmd;
+        printCmdList !g_tCmd;
         i)
       )
   )
@@ -642,13 +603,13 @@ let handleEqualHelper left right = (
 let handleLesserHelper left right = (
   if(left < right) then
       (let i = generateId cmdId in(
-        g_lCmd := (i,"true") :: !g_lCmd;
-        printCmdList !g_lCmd;
+        g_tCmd := (i,"true") :: !g_tCmd;
+        printCmdList !g_tCmd;
         i))
     else
       (let i = generateId cmdId in(
-        g_lCmd := (i,"false") :: !g_lCmd;
-        printCmdList !g_lCmd;
+        g_tCmd := (i,"false") :: !g_tCmd;
+        printCmdList !g_tCmd;
         i)
       )
   )
@@ -665,8 +626,8 @@ let handleCmpHelper left right op= (
         print_newline();
         let i = generateId cmdId in(
             g_tBop := (i,(op,(left,right))) :: !g_tBop;
-            g_lCmd := (i,"binop") :: !g_lCmd;
-            printCmdList !g_lCmd;
+            g_tCmd := (i,"binop") :: !g_tCmd;
+            printCmdList !g_tCmd;
             printBOP !g_tBop;
             i
           )
@@ -678,8 +639,8 @@ let handleCmpHelper left right op= (
             print_int right;
             let i = generateId cmdId in(
                 g_tBop := (i,(op,(left,right))) :: !g_tBop;
-                g_lCmd := (i,"binop") :: !g_lCmd;
-                printCmdList !g_lCmd;
+                g_tCmd := (i,"binop") :: !g_tCmd;
+                printCmdList !g_tCmd;
                 printBOP !g_tBop;
                 i
               )
@@ -687,7 +648,7 @@ let handleCmpHelper left right op= (
           else(
             print_string ("in handle lesser: all defined:\t");
             match op with
-              "<" -> handleLesserHelper left right
+              | "<" -> handleLesserHelper left right
               | "=" -> handleEqualHelper left right
         )
       )
@@ -704,17 +665,17 @@ let handleCmp left right = (
 
 let handleIfElse cond thenClause elseClause = (
     let newid = generateId cmdId in (
-        g_lCmd := (newid, "cond") :: !g_lCmd;
+        g_tCmd := (newid, "cond") :: !g_tCmd;
         g_lCond := (newid,(cond,(thenClause, elseClause))) :: !g_lCond;
-        printCmdList !g_lCmd;
+        printCmdList !g_tCmd;
         newid
       )
   );;
 
 let addObj o = (
     let newid = generateId cmdId in(
-        g_lCmd := (newid, "obj") :: !g_lCmd;
-        printCmdList !g_lCmd;
+        g_tCmd := (newid, "obj") :: !g_tCmd;
+        printCmdList !g_tCmd;
         g_lVar := (newid, o) :: !g_lVar;
         newid
       )
@@ -735,8 +696,8 @@ let handleField obj fld = (
           )
         else(
               let newid = generateId cmdId in (
-                g_lCmd := (newid, "field") :: !g_lCmd;
-                printCmdList !g_lCmd;
+                g_tCmd := (newid, "field") :: !g_tCmd;
+                printCmdList !g_tCmd;
                 g_lVar := (newid,obj^"."^fld) :: !g_lVar;
                 if(List.mem_assoc newvar !g_tSb) then(
                   )
@@ -752,8 +713,8 @@ let handleField obj fld = (
   );;
 
 let handleFieldNotAssign fid ftype fvalue = (
-    if(List.mem_assoc fid !g_lCmd) then(
-        if(List.assoc fid !g_lCmd = "field") then (
+    if(List.mem_assoc fid !g_tCmd) then(
+        if(List.assoc fid !g_tCmd = "field") then (
             let fname = List.assoc fid !g_lVar in(
               if(List.mem_assoc fname !g_tSb) then
                 (
@@ -774,42 +735,685 @@ let handleFieldNotAssign fid ftype fvalue = (
     0
   );;
 
-let handleFieldInAssign fid ftype fvalue = (
-    print_string((string_of_int fid) ^ "\t= cmd:" ^ (string_of_int fvalue) ^ "\n");
-    if(ftype = "proc") then (
-        let idproc = ((List.assoc fid !g_lVar), ("U",(ftype,fvalue))) in(
-            g_tSb := idproc :: !g_tSb;
-            let genProcId = generateId cmdId in
-              declareProc genProcId (List.assoc fid !g_lVar) !g_stPara fvalue;
-            printProc !g_tProc;
-            isCmdInProc := false;
-            genProcId
-          )
+(* new version *)
+let rec checkVarHeap p_var p_field l= (
+  (* check if the variable with field is inside the heap *)
+    match l with
+    | [] -> -1
+    | h::t -> if((fst(snd h) = p_var) && (fst(snd(snd h)) = p_field)) then (
+                fst h) 
+              else (checkVarHeap p_var p_field t)
+  );;
+
+let pushStack p_id p_item = (
+    if(List.mem_assoc p_id !g_tStack) then(
+        g_tStack := (p_id, p_item) :: (except (p_id, (List.assoc p_id !g_tStack)) !g_tStack)
       )
     else(
-        let _cmdid = generateId cmdId in(
-            asstbl := (_cmdid,((List.assoc fid !g_lVar),handleAssignInHelp fvalue)) :: !asstbl;
-            printASS !asstbl;
-            g_lCmd := (_cmdid,"ass") :: !g_lCmd;
-            printCmdList !g_lCmd;
-            _cmdid
-          )
+        g_tStack := (p_id, p_item) :: !g_tStack
       )
   );;
 
-let handleFieldAssign obj fld ftype fvalue = (
-    print_string (obj ^ "." ^ fld ^ "= cmd:" ^ (string_of_int fvalue) ^ " as a " ^ ftype ^ "\n");
-    let newid = handleField obj fld in (
-      if(!isCmdInProc = false) then(
-            handleFieldNotAssign newid ftype fvalue
+let createVardef p_var  = (
+    let newCmdId = generateId g_nHeapCmdId in(
+        g_tCmd := (newCmdId, "vardef") :: !g_tCmd;
+        printCmdList !g_tCmd;
+        g_tVardef := (newCmdId, p_var) :: !g_tVardef;
+        newCmdId
+      )
+  );;
+
+let varDeclare p_var = (
+    if(!g_bInProc) then(
+        createVardef p_var 
+      )
+    else
+    ((* update the stack and heap *)
+        let (newHeapLoc, newStackId) = (generateId g_nHeapCmdId, generateId g_nStackId) in(
+          g_tCmd := (newHeapLoc, "heap") :: !g_tCmd;
+          g_tHeap := (newHeapLoc,(p_var,("val",-1))) :: !g_tHeap;
+          printHeap ();
+          pushStack newStackId (p_var, newHeapLoc);
+          printStack ();
+          newHeapLoc
+        )
+    )
+  );;
+
+let varEval p_var = (
+      let p_pos = checkVarHeap p_var "val" !g_tHeap in(
+          if(p_pos = -1) then(
+              if(!g_bInProc && p_var = !g_sPara) then(
+                  let newVarId = generateId g_nHeapCmdId in (
+                      g_tCmd := (newVarId, "para") :: !g_tCmd;
+                      g_lVar := (newVarId, p_var) :: !g_lVar;
+                      newVarId
+                  )
+                )
+              else(
+                  print_string ("Not defined " ^ p_var ^ "\n");
+                  let newHeapLoc = generateId g_nHeapCmdId in (
+                      g_tHeap := (newHeapLoc, (p_var ,("V",-1))) :: !g_tHeap;
+                      printHeap ();
+                      -1
+                  )
+              )
+            )
+          else
+            p_pos
+        )
+  );;
+
+let numEval p_num = (
+    let newCmdId = generateId g_nHeapCmdId in (
+          g_tCmd := (newCmdId, "num") :: !g_tCmd;
+          g_lNum := (newCmdId, p_num) :: !g_lNum;
+          printNumList !g_lNum;
+          printCmdList !g_tCmd;
+          newCmdId
+      )
+  );;
+
+(* TODO: what if the field is malloc in procedure so that the field is not visible in stack or heap*)
+let fieldEval p_var p_field = (
+    let p_pos = checkVarHeap p_var p_field !g_tHeap in (
+        if(p_pos = -1) then(
+            print_string ("Not defined " ^ p_var ^ "." ^ p_field ^ "\n");
+            let newHeapLoc = generateId g_nHeapCmdId in (
+                g_tHeap := (newHeapLoc, (p_var ,("V",-1))) :: !g_tHeap;
+                printHeap();
+                -1
+            )
           )
         else(
-            handleFieldInAssign newid ftype fvalue
+            p_pos
           )
       )
   );;
 
-# 813 "calculatorYACC.ml"
+let rec heapEvalHelp p_pos l = (
+    match l with
+    | [] -> print_string ("In heapEvalHelp: no valid pos.\n");-2
+    | h::t -> if(fst h = p_pos) then (snd (snd (snd h))) else( heapEvalHelp p_pos t)
+  );;
+
+let createNum p_n = (
+    let newCmdId = generateId g_nHeapCmdId in (
+      g_lNum := (newCmdId,p_n) :: !g_lNum;
+      printNumList !g_lNum;
+      g_tCmd := (newCmdId, "num") :: !g_tCmd;
+      printCmdList !g_tCmd;
+      newCmdId
+    )
+  );;
+
+let rec heapEvalCmd p_pos l = (
+    match l with
+    | [] -> print_string ("In heapEvalCmd: no cmd pos.\n");-1
+    | h::t -> if(fst h = p_pos ) then (
+                  if( snd h = "heap") then(
+                      heapEvalHelp p_pos !g_tHeap
+                    )
+                  else(
+                      p_pos
+                  )
+                )
+              else(
+                  heapEvalCmd p_pos t
+                )
+  );;
+
+  let heapEval p_pos = (
+      heapEvalCmd p_pos !g_tCmd
+    );;
+
+let createBinopHelp p_pos p_val = (
+  (* one of para is -1 *)
+    if(p_val <> -1) then
+      p_val
+    else
+      p_pos
+  );;
+
+let createBinop p_f p_op p_s = (
+    let newCmdId = generateId g_nHeapCmdId in (
+        g_tBop := (newCmdId, (p_op, (p_f , p_s))) :: !g_tBop;
+        g_tCmd := (newCmdId, "binop") :: !g_tCmd;
+        newCmdId
+      )
+  );;
+
+let heapEval2 p_pos = (
+    if(p_pos <> -1) then(
+      (* cmd id of answer which is a num *)
+        heapEval p_pos
+      )
+    else(
+        p_pos
+      )
+  );;
+
+let binopEval p_fst p_op p_snd = (
+    if(!g_bInProc) then(
+          createBinop p_fst p_op p_snd
+      )
+    else(
+          let (p_vf, p_vs) = (heapEval2 p_fst, heapEval2 p_snd) in(
+            if(((p_vf > -1) && ((List.assoc p_vf !g_tCmd) = "num")) && 
+                ((p_vs > -1) && ((List.assoc p_vs !g_tCmd) = "num") )) then(
+                    (* calculate it and put it into g_lNum and return the cmdId *)
+                    let p_ans = cal (List.assoc p_vf !g_lNum) p_op (List.assoc p_vs !g_lNum) in (
+                        createNum p_ans
+                      )
+              )
+            else(
+                print_string ("in binopEval: wrong parameter.\n");
+                -1
+              )
+          )
+      )
+    
+  );;
+
+let cmp a op b = (
+    match op with
+    | "=" -> if(a = b) then "true" else "false"
+    | "<" -> if(a < b) then "true" else "false"
+  );;
+
+let createBool p_tf = (
+    let newCmdId = generateId g_nHeapCmdId in (
+        g_tCmd := (newCmdId, p_tf) :: !g_tCmd;
+        newCmdId
+      )
+  );;
+
+let bexprEval p_fst p_op p_snd = (
+    if(!g_bInProc) then(
+          createBinop p_fst p_op p_snd
+      )
+    else(
+          let (p_vf, p_vs) = (heapEval2 p_fst, heapEval2 p_snd) in(
+              if(((p_vf > -1) && (List.assoc p_vf !g_tCmd = "num")) && 
+                  ((p_vs > -1) && (List.assoc p_vs !g_tCmd = "num") )) then(
+                  (* if both of them have values, just calculate it and put it into g_lNum and return the cmdId *)
+                  let p_ans = cmp (List.assoc p_vf !g_lNum) p_op (List.assoc p_vs !g_lNum) in (
+                      createBool p_ans
+                    )
+                )
+              else(
+                  print_string ("In bexprEval: wrong parameter.\n");
+                  -1
+              )
+          )
+      )
+    
+  );;
+
+let createAssign p_left p_right = (
+    let newCmdId = generateId g_nHeapCmdId in(
+        g_tAssign := (newCmdId, (p_left, p_right)) :: !g_tAssign;
+        g_tCmd := (newCmdId, "ass") :: !g_tCmd;
+        newCmdId
+      )
+  );;
+
+let updateHeapAtom p_pos p_newval = (
+    let (p_var, (p_field, p_val)) = List.assoc p_pos !g_tHeap in(
+        if(List.mem_assoc p_pos !g_tHeapAtom) then(
+            g_tHeapAtom := (p_pos, (p_var, (p_field, p_newval))) :: except (p_pos, List.assoc p_pos !g_tHeapAtom) !g_tHeapAtom
+          )
+        else(
+            g_tHeapAtom := (p_pos, (p_var, (p_field, p_newval))) :: !g_tHeapAtom
+          );
+        print_string ("Updating heap atom.\n");
+        printHeapAtom();
+      )
+  );;
+
+let assignEval p_left p_right = (
+    if( !g_bInProc ) then (
+          createAssign p_left p_right
+      )
+    else(
+        let p_v = heapEval2 p_right in(
+              if((p_v > -1) && ((List.assoc p_v !g_tCmd = "num") || (List.assoc p_v !g_tCmd = "closure")) ) then(
+                  let cnt = List.assoc p_left !g_tHeap in(
+                    if(!g_bAtom) then(
+                        print_string("In assignEval with ATOM: just run cmd.\n");
+                        updateHeapAtom p_left p_v
+                      )
+                    else(
+                        print_string("In assignEval without ATOM: just run cmd.\n");
+                        g_tHeap := (p_left, (fst cnt, (fst (snd cnt), p_v))) :: except (p_left, cnt) !g_tHeap
+                      );
+                    print_string ("After assign.\n");
+                    printHeap ();
+                    p_left
+                  )
+                )
+              else(
+                  print_string ("In assignEval not found right.\n");
+                  -1
+                )
+          ) 
+      )
+  );;
+
+let procDeclare p_para p_cmdId = (
+    let newCmdId = generateId g_nHeapCmdId in(
+        g_tCmd := (newCmdId, "closure") :: !g_tCmd;
+        printCmdList !g_tCmd;
+        g_tClo := (newCmdId, (p_para, (p_cmdId, !g_nStackId))) :: !g_tClo;
+        newCmdId
+      )
+  );;
+
+let updateHeap p_pos p_newval = (
+    let (p_var, (p_field, p_val)) = List.assoc p_pos !g_tHeap in(
+        g_tHeap := (p_pos, (p_var, (p_field, p_newval))) :: 
+        except (p_pos, (p_var, (p_field, p_val))) !g_tHeap;
+        print_string ("Updating heap.\n");
+        printHeap();
+      )
+  );;
+
+let get p_numId = (
+    List.assoc p_numId !g_lNum
+  );;
+
+let runCmp p_op p_l p_r = (
+  print_string ("runcmp:" ^ (string_of_int (get p_l) ) ^ " " ^ p_op ^ " " ^ (string_of_int (get p_r)) ^ "\n");
+    match p_op with
+    | "<" -> if(get p_l < get p_r) then createBool "true" else createBool "false"
+    | "=" -> if(get p_l = get p_r) then createBool "true" else createBool "false"
+  );;
+
+let getBool p_boolId = (
+    match List.assoc p_boolId !g_tCmd with
+    | "true"  -> true
+    | "false" -> false
+  );;
+
+let rec popStack n = (
+    if(n = 0) then (
+        ()
+        )
+      else(
+          g_nStackId := !g_nStackId - 1;
+          g_tStack := except (!g_nStackId, (List.assoc !g_nStackId !g_tStack)) !g_tStack;
+          printStack();
+          if(n > 1) then
+            (popStack (n-1))
+      )    
+  );;
+
+let popStackTop () = (
+  (* we pop parameter here *)
+    popStack 1
+  );;
+
+let mergeHeapHelp p_newitem = (
+    let p_heapid = fst p_newitem in(
+      (* update heap with heapAtom *)
+        g_tHeap := p_newitem :: 
+        except (p_heapid, (List.assoc p_heapid !g_tHeap)) !g_tHeap;
+        (* pop all heapAtom *)
+        g_tHeapAtom := except (p_heapid, (List.assoc p_heapid !g_tHeapAtom)) !g_tHeapAtom;
+      )
+  )
+
+let mergeHeaps () = (
+    match !g_tHeapAtom with
+    |[] -> ()
+    | h::t -> (
+            mergeHeapHelp h
+      );
+  );;
+
+let rec runCmd2 p_cmdid p_stackId p_bAtom = (
+    if(List.mem_assoc p_cmdid !g_tCmd) then
+    (
+      print_string ("Now run cmd:" ^ (string_of_int p_cmdid) ^ " " ^ List.assoc p_cmdid !g_tCmd ^ "\n");
+      match List.assoc p_cmdid !g_tCmd with
+        | "binop" -> let (p_op,(p_left, p_right)) = List.assoc p_cmdid !g_tBop in (
+            printBOP !g_tBop;
+            match p_op with
+            | "+" ->  createNum ((List.assoc (runCmd2 p_left p_stackId  !g_bAtom) !g_lNum) + 
+                    (List.assoc (runCmd2 p_right p_stackId  !g_bAtom) !g_lNum))
+            | "-" ->  createNum ((List.assoc (runCmd2 p_left p_stackId  !g_bAtom) !g_lNum) - 
+                    (List.assoc (runCmd2 p_right p_stackId  !g_bAtom) !g_lNum))
+            | "<" ->  runCmp "<" (runCmd2 p_left p_stackId  !g_bAtom) (runCmd2 p_right p_stackId !g_bAtom)
+            | "=" ->  runCmp "=" (runCmd2 p_left p_stackId !g_bAtom) (runCmd2 p_right p_stackId !g_bAtom)
+          )
+        | "heap" -> heapEval p_cmdid 
+        | "ass" -> let p_ass = List.assoc p_cmdid !g_tAssign in(
+              (* assign right to left *)
+              if( p_bAtom) then(
+                  updateHeapAtom (fst p_ass) (runCmd2 (snd p_ass) p_stackId !g_bAtom);-1
+                )
+              else(
+                  updateHeap (fst p_ass) (runCmd2 (snd p_ass) p_stackId !g_bAtom);-1
+                )
+          )
+        | "num" -> p_cmdid
+        | "cond" -> let (p_if,(p_then,p_else)) = List.assoc p_cmdid !g_tCond in (
+                if(getBool (runCmd2 p_if p_stackId !g_bAtom)) then(
+                    runCmd2 p_then p_stackId !g_bAtom
+                  )
+                else(
+                    runCmd2 p_else p_stackId !g_bAtom
+                  )
+              )
+        | "true" -> createBool "true"
+        | "false" -> createBool "false"
+        | "closure" -> (
+              let (newHeapLoc, newStackId) = (generateId g_nHeapCmdId, generateId g_nStackId) in (
+                  (* push the parameter into stack *)
+                  let (p_para,(p_id,p_stacktop)) = List.assoc p_cmdid !g_tClo in(
+                      print_string("IN CLOSURE.\n");
+                      g_tCmd := (newHeapLoc, "heap") :: !g_tCmd;
+                      printCmdList !g_tCmd;
+                      g_tHeap := (newHeapLoc, (p_para, ("val", !g_iPara))) :: !g_tHeap;
+                      printHeap();
+                      (* pop stack to what closure indicates *)
+                      (*popStack (p_stacktop - !g_nStackId);*)
+                      pushStack newStackId (p_para, newHeapLoc);
+                      printStack ();
+                      let (orist,ret) = (!g_nStackId, runCmd2 p_id p_stacktop !g_bAtom) in(
+                          popStack (!g_nStackId - orist);
+                          popStackTop();
+                          ret
+                      )
+                  )
+              )
+          )
+        | "para" -> (
+              let p_paraname = List.assoc p_cmdid !g_lVar in(
+                   let (nm,heapid) = List.assoc (!g_nStackId - 1) !g_tStack in(
+                      if(nm <> p_paraname) then(
+                          print_string ("WRONG: para should be at the stack top.\n");
+                          -1
+                        )
+                      else(
+                          heapEval heapid
+                        )
+                    )
+                )
+          )
+        | "proc" -> (
+            let (p_name, p_para) = List.assoc p_cmdid !g_tProcedure in(
+                let p_cloId = heapEval p_name in(                    
+                    g_iPara := (runCmd2 p_para !g_nStackId !g_bAtom);
+                    runCmd2 p_cloId !g_nStackId  !g_bAtom
+                  )
+              )
+          )
+        | "while" -> (
+            let (p_bid, p_id) = List.assoc p_cmdid !g_tWhile in(
+                  let p_whileans = runCmd2 p_bid !g_nStackId !g_bAtom in(
+                      if(getBool p_whileans) then(
+                          runCmd2 p_id !g_nStackId !g_bAtom;
+                          runCmd2 p_cmdid !g_nStackId  !g_bAtom
+                        )
+                      else(
+                          0
+                      )
+                  )
+              )
+          )
+        | "seq" ->(
+            let (p_id1,p_id2) = List.assoc p_cmdid !g_tSeq in(
+                runCmd2 p_id1 !g_nStackId !g_bAtom;
+                runCmd2 p_id2 !g_nStackId !g_bAtom; 
+                0
+              )
+          )
+        | "vardef" ->(
+            let p_var = List.assoc p_cmdid !g_tVardef in(
+                let (newHeapLoc, newStackId) = (generateId g_nHeapCmdId, generateId g_nStackId) in(
+                  g_tCmd := (newHeapLoc, "heap") :: !g_tCmd;
+                  g_tHeap := (newHeapLoc,(p_var,("val",-1))) :: !g_tHeap;
+                  printHeap ();
+                  pushStack newStackId (p_var, newHeapLoc);
+                  printStack ();
+                  newHeapLoc
+                )
+            )
+        )
+        | "atom" ->(
+          let (p_cmdid1, p_cmdid2) = List.assoc p_cmdid !g_tAtom in(
+              g_bAtom := true;
+              runCmd2 p_cmdid1 !g_nStackId !g_bAtom;
+              runCmd2 p_cmdid2 !g_nStackId !g_bAtom;
+              mergeHeaps();
+              g_bAtom := false;
+              0
+            )
+          )
+        | "parallel" -> (
+          let (p_cmdid1, p_cmdid2) = List.assoc p_cmdid !g_tParallel in(
+              if((!g_nHeapCmdId mod 2) = 1) then(
+                  runCmd2 p_cmdid1 !g_nStackId !g_bAtom;
+                  runCmd2 p_cmdid2 !g_nStackId !g_bAtom;
+                )
+              else(
+                  runCmd2 p_cmdid2 !g_nStackId !g_bAtom;
+                  runCmd2 p_cmdid1 !g_nStackId !g_bAtom;
+                );
+              0
+            )
+          )
+      )
+      else(
+          -1
+        )
+  );;
+
+let runCmd p_cmdid p_stackId = (
+    runCmd2 p_cmdid p_stackId !g_bAtom
+  );;
+
+let rec printProcedureHelp l = (
+    match l with
+    |[] -> print_newline()
+    | h::t -> print_string ("Proc:" ^ (string_of_int (fst h)) ^ "\t" ^ (string_of_int (fst (snd h)))^ "\t" ^ (string_of_int ( snd (snd h)))^ "\n")
+  );;
+
+let printProcedure () = (
+    printProcedureHelp !g_tProcedure
+  );;
+
+let createProc p_name p_para = (
+    let newCmdId = generateId g_nHeapCmdId in(
+        g_tCmd := (newCmdId, "proc") :: !g_tCmd;
+        printCmdList !g_tCmd;
+        g_tProcedure := (newCmdId, (p_name, p_para)) :: !g_tProcedure;
+        printProcedure ();
+        newCmdId
+      )
+  );;
+
+let runReccall p_name p_para = (
+    (* p_name is heap pos of procedure name *)
+    (* p_para is cmdid for "num" *)
+    if(!g_bInProc) then(
+        createProc p_name p_para
+      )
+    else(
+        let p_cloId = heapEval p_name in(
+          g_iPara := p_para;
+          runCmd p_cloId !g_nStackId
+        )
+      )
+  );;
+
+let createCond p_if p_then p_else = (
+    let p_condId = generateId g_nHeapCmdId in(
+        g_tCond := (p_condId,(p_if,(p_then,p_else))) :: !g_tCond;
+        g_tCmd := (p_condId, "cond") :: !g_tCmd;
+        printCmdList !g_tCmd;
+        p_condId
+      )
+  );;
+
+let condEval p_if p_then p_else = (
+    if(!g_bInProc) then(
+        createCond p_if p_then p_else
+      )
+    else(
+        let p_ifans = runCmd p_if !g_nStackId in(
+            if(getBool p_ifans) then(
+                runCmd p_then !g_nStackId
+              )
+            else(
+                runCmd p_else !g_nStackId
+              )
+          )
+      )
+  );;
+
+let createField p_name p_field = (
+    let newHeapLoc = generateId g_nHeapCmdId in(
+        g_tCmd := (newHeapLoc, "heap") :: !g_tCmd;
+        g_tHeap := (newHeapLoc,(p_name,(p_field,-1))) :: !g_tHeap;
+        printHeap();
+        ()
+        )
+  );;
+
+let createObj p_name = (
+    (* create all fields for this variable *)
+    let p_pos = checkVarHeap p_name "val" !g_tHeap in
+    (
+      if(p_pos = -1) then (
+            print_string ("In createObj: cannot malloc because not defined.\n");
+        )
+        else(
+          createField p_name "C";
+          createField p_name "R";
+          createField p_name "F";
+          printStack ();
+          ()
+        )
+      )
+  );;
+
+let skipEval () = (
+    ()
+  );;
+
+let printWhileHelp l = (
+    match l with
+    [] -> print_newline();
+    | h::t -> print_string ("While: " ^ (string_of_int (fst h)) ^ "\t" ^ (string_of_int (fst (snd h))) ^ "\t" ^ (string_of_int  (snd (snd h))) ^ "\n")
+  );;
+
+let printWhile () = (
+    printWhileHelp !g_tWhile
+  );;
+
+let createWhile p_boolId p_cmdid = (
+    let p_whileId = generateId g_nHeapCmdId in(
+        g_tCmd := (p_whileId, "while") :: !g_tCmd;
+        printCmdList !g_tCmd;
+        g_tWhile := (p_whileId, (p_boolId, p_cmdid)) :: !g_tWhile;
+        printWhile();
+        p_whileId
+      )
+  );;
+
+let rec whileEval p_boolId p_cmdid = (
+    if(!g_bInProc) then(
+        createWhile p_boolId p_cmdid
+      )
+    else(
+        let p_whileans = runCmd p_boolId !g_nStackId in(
+            if(getBool p_whileans) then(
+                runCmd p_cmdid !g_nStackId;
+                whileEval p_boolId p_cmdid
+              )
+            else(
+                0
+              )
+          )
+      )
+  );;
+
+let printSeqHelp l = (
+    match l with
+    [] -> print_newline()
+    | h::t -> print_string ("Sequence: " ^ (string_of_int (fst h))^ "\t" ^ (string_of_int (fst (snd h))) ^ ";" ^ (string_of_int (snd (snd h))) ^ "\n")
+  );;
+
+let printSeq () = (
+    printSeqHelp !g_tSeq
+  )
+
+let createSeq p_cmdid1 p_cmdid2 = (
+    let newCmdId = generateId g_nHeapCmdId in(
+        g_tCmd := (newCmdId, "seq") :: !g_tCmd;
+        printCmdList !g_tCmd;
+        g_tSeq := (newCmdId, (p_cmdid1, p_cmdid2)) :: !g_tSeq;
+        printSeq();
+        newCmdId
+      )
+  );;
+
+let seqEval p_cmdid1 p_cmdid2 = (
+    if(!g_bInProc) then(
+        createSeq p_cmdid1 p_cmdid2
+      )
+    else(
+        runCmd p_cmdid1 !g_nStackId;
+        runCmd p_cmdid2 !g_nStackId;
+        0
+      )
+  );;
+
+let createAtom p_cmdid1 p_cmdid2 = (
+    let newCmdId = generateId g_nHeapCmdId in(
+        g_tCmd := (newCmdId, "atom") :: !g_tCmd;
+        printCmdList !g_tCmd;
+        g_tAtom := (newCmdId,(p_cmdid1, p_cmdid2)) :: !g_tAtom;
+        newCmdId
+      )
+  );;
+
+
+let atomEval p_cmdid1 p_cmdid2 = (
+    if(!g_bInProc) then(
+        createAtom p_cmdid1 p_cmdid2
+      )
+    else(
+        print_string ("Before Merging:\n");
+        printHeap();
+        mergeHeaps();
+        print_string ("After Merging:\n");
+        printHeap();        
+        0
+      )
+  );;
+
+let createParallel p_cmdid1 p_cmdid2 = (
+    let p_cmdid = generateId g_nHeapCmdId in(
+        g_tParallel := (p_cmdid,(p_cmdid1, p_cmdid2)) :: !g_tParallel;
+        g_tCmd := (p_cmdid, "parallel") :: !g_tCmd;
+        printCmdList !g_tCmd;
+        p_cmdid
+      )
+  );;
+
+let parallelEval p_cmdid1 p_cmdid2 = (
+    if(!g_bInProc) then(
+        createParallel p_cmdid1 p_cmdid2
+      )
+    else(
+        0
+      )
+  );;
+
+# 1417 "calculatorYACC.ml"
 let yytransl_const = [|
   257 (* EOL *);
   258 (* SEMICOLON *);
@@ -832,151 +1436,151 @@ let yytransl_const = [|
   277 (* EQUAL *);
   278 (* LIGHTER *);
   279 (* MALLOCDEF *);
-  280 (* DOT *);
+  280 (* SKIPDEF *);
+  281 (* PARALLEL *);
+  282 (* DOT *);
+  283 (* END *);
+  284 (* LBRACKET *);
+  285 (* RBRACKET *);
+  286 (* ATOMDEF *);
     0|]
 
 let yytransl_block = [|
   267 (* VAR *);
   268 (* FIELD *);
-  281 (* NUM *);
+  287 (* NUM *);
     0|]
 
 let yylhs = "\255\255\
-\001\000\002\000\002\000\002\000\003\000\003\000\003\000\003\000\
-\005\000\004\000\004\000\008\000\008\000\008\000\007\000\007\000\
-\006\000\006\000\006\000\006\000\006\000\006\000\006\000\006\000\
-\006\000\000\000"
+\001\000\002\000\002\000\003\000\003\000\003\000\003\000\003\000\
+\003\000\003\000\003\000\003\000\003\000\005\000\004\000\004\000\
+\008\000\008\000\008\000\007\000\007\000\006\000\006\000\006\000\
+\006\000\006\000\006\000\006\000\006\000\010\000\009\000\011\000\
+\000\000"
 
 let yylen = "\002\000\
-\001\000\004\000\003\000\001\000\006\000\004\000\001\000\001\000\
-\004\000\005\000\003\000\001\000\001\000\002\000\002\000\002\000\
-\004\000\003\000\003\000\003\000\003\000\002\000\003\000\001\000\
-\001\000\002\000"
+\002\000\003\000\001\000\003\000\006\000\004\000\001\000\003\000\
+\005\000\001\000\001\000\006\000\005\000\004\000\005\000\003\000\
+\001\000\001\000\002\000\002\000\002\000\002\000\003\000\003\000\
+\003\000\003\000\003\000\001\000\001\000\002\000\003\000\001\000\
+\002\000"
 
 let yydefred = "\000\000\
 \000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\
-\025\000\026\000\001\000\000\000\007\000\008\000\000\000\000\000\
-\022\000\000\000\000\000\000\000\000\000\012\000\013\000\000\000\
-\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\
-\000\000\000\000\000\000\000\000\000\000\000\000\000\000\014\000\
-\000\000\000\000\003\000\000\000\000\000\020\000\021\000\000\000\
-\023\000\000\000\002\000\017\000\000\000\000\000\000\000\006\000\
-\009\000\000\000\000\000\005\000"
+\007\000\000\000\032\000\029\000\033\000\000\000\000\000\010\000\
+\011\000\000\000\000\000\000\000\000\000\000\000\000\000\030\000\
+\000\000\000\000\017\000\018\000\000\000\000\000\000\000\000\000\
+\000\000\001\000\000\000\000\000\000\000\000\000\000\000\000\000\
+\022\000\000\000\000\000\000\000\000\000\031\000\000\000\000\000\
+\000\000\019\000\000\000\008\000\000\000\000\000\000\000\002\000\
+\000\000\000\000\025\000\026\000\000\000\004\000\000\000\000\000\
+\027\000\000\000\000\000\000\000\006\000\000\000\000\000\014\000\
+\000\000\000\000\000\000\009\000\013\000\000\000\005\000\012\000"
 
 let yydgoto = "\002\000\
-\010\000\011\000\012\000\013\000\014\000\015\000\040\000\025\000"
+\013\000\014\000\015\000\016\000\017\000\018\000\050\000\030\000\
+\019\000\020\000\021\000"
 
 let yysindex = "\002\000\
-\028\255\000\000\007\255\006\255\000\255\002\255\043\255\008\255\
-\000\000\000\000\000\000\015\255\000\000\000\000\086\255\251\254\
-\000\000\007\255\010\255\018\255\013\255\000\000\000\000\067\255\
-\014\255\026\255\028\255\007\255\007\255\007\255\007\255\007\255\
-\032\255\101\255\035\255\028\255\055\255\007\255\007\255\000\000\
-\055\255\036\255\000\000\001\255\001\255\000\000\000\000\077\255\
-\000\000\007\255\000\000\000\000\101\255\101\255\030\255\000\000\
-\000\000\101\255\055\255\000\000"
+\212\255\000\000\254\254\251\254\252\254\041\255\041\255\007\255\
+\000\000\212\255\000\000\000\000\000\000\004\255\024\255\000\000\
+\000\000\245\255\212\255\037\255\032\255\253\254\030\255\000\000\
+\033\255\028\255\000\000\000\000\226\255\036\255\212\255\046\255\
+\000\255\000\000\212\255\253\254\253\254\253\254\253\254\253\254\
+\000\000\212\255\212\255\004\000\055\255\000\000\049\255\253\254\
+\253\254\000\000\212\255\000\000\065\255\212\255\212\255\000\000\
+\011\255\011\255\000\000\000\000\044\255\000\000\078\255\253\254\
+\000\000\004\000\004\000\072\255\000\000\052\255\066\255\000\000\
+\212\255\004\000\212\255\000\000\000\000\089\255\000\000\000\000"
 
 let yyrindex = "\000\000\
-\000\000\000\000\000\000\091\255\000\000\000\000\000\000\000\000\
-\000\000\000\000\000\000\049\000\000\000\000\000\000\000\001\000\
+\000\000\000\000\250\255\000\000\000\000\000\000\000\000\000\000\
+\000\000\000\000\000\000\000\000\000\000\000\000\075\255\000\000\
 \000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\
+\000\000\062\255\000\000\000\000\000\000\000\000\000\000\000\000\
 \000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\
-\000\000\040\000\096\255\000\000\000\000\000\000\000\000\000\000\
-\000\000\000\000\000\000\010\000\031\000\000\000\000\000\000\000\
-\000\000\000\000\000\000\000\000\038\255\039\255\000\000\000\000\
-\000\000\055\000\000\000\000\000"
+\000\000\000\000\000\000\146\255\255\255\000\000\000\000\000\000\
+\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\
+\092\255\122\255\000\000\000\000\000\000\000\000\000\000\000\000\
+\000\000\255\254\191\255\000\000\000\000\000\000\000\000\000\000\
+\000\000\170\255\000\000\000\000\000\000\000\000\000\000\000\000"
 
 let yygindex = "\000\000\
-\000\000\234\255\221\255\000\000\000\000\253\255\000\000\000\000"
+\000\000\064\000\246\255\000\000\000\000\254\255\000\000\097\000\
+\000\000\000\000\000\000"
 
-let yytablesize = 333
-let yytable = "\017\000\
-\024\000\052\000\001\000\024\000\043\000\055\000\030\000\031\000\
-\018\000\018\000\020\000\003\000\021\000\051\000\034\000\026\000\
-\027\000\016\000\033\000\036\000\006\000\035\000\037\000\060\000\
-\044\000\045\000\046\000\047\000\048\000\019\000\019\000\009\000\
-\003\000\041\000\053\000\054\000\042\000\050\000\004\000\011\000\
-\005\000\006\000\007\000\049\000\056\000\059\000\058\000\003\000\
-\004\000\000\000\008\000\000\000\009\000\016\000\010\000\000\000\
-\006\000\015\000\016\000\003\000\022\000\023\000\000\000\000\000\
-\000\000\004\000\000\000\009\000\006\000\007\000\028\000\029\000\
-\030\000\031\000\000\000\000\000\000\000\008\000\000\000\009\000\
-\028\000\029\000\030\000\031\000\000\000\057\000\000\000\038\000\
-\039\000\028\000\029\000\030\000\031\000\032\000\024\000\024\000\
-\024\000\024\000\024\000\023\000\023\000\023\000\023\000\023\000\
-\028\000\029\000\030\000\031\000\000\000\000\000\000\000\000\000\
-\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\
-\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\
-\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\
-\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\
-\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\
-\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\
-\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\
-\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\
-\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\
-\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\
-\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\
-\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\
-\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\
-\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\
-\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\
-\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\
-\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\
-\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\
-\000\000\000\000\024\000\000\000\024\000\024\000\024\000\024\000\
-\024\000\024\000\000\000\018\000\000\000\018\000\018\000\000\000\
-\024\000\018\000\018\000\000\000\024\000\024\000\024\000\000\000\
-\000\000\018\000\000\000\000\000\000\000\018\000\018\000\018\000\
-\019\000\000\000\019\000\019\000\000\000\000\000\019\000\019\000\
-\000\000\011\000\000\000\000\000\000\000\000\000\019\000\011\000\
-\011\000\000\000\019\000\019\000\019\000\000\000\000\000\011\000\
-\010\000\000\000\000\000\011\000\011\000\011\000\010\000\010\000\
-\000\000\000\000\000\000\000\000\000\000\000\000\010\000\000\000\
-\000\000\000\000\010\000\010\000\010\000"
+let yytablesize = 267
+let yytable = "\033\000\
+\022\000\054\000\001\000\029\000\029\000\024\000\025\000\026\000\
+\041\000\020\000\005\000\020\000\020\000\020\000\032\000\020\000\
+\038\000\039\000\020\000\044\000\052\000\020\000\020\000\023\000\
+\055\000\035\000\020\000\012\000\020\000\020\000\034\000\062\000\
+\063\000\057\000\058\000\059\000\060\000\061\000\042\000\043\000\
+\068\000\045\000\046\000\070\000\071\000\066\000\067\000\036\000\
+\037\000\038\000\039\000\026\000\072\000\047\000\005\000\051\000\
+\053\000\064\000\027\000\028\000\065\000\074\000\078\000\028\000\
+\079\000\028\000\028\000\028\000\028\000\028\000\028\000\012\000\
+\028\000\069\000\028\000\028\000\028\000\028\000\028\000\073\000\
+\076\000\028\000\028\000\028\000\028\000\028\000\028\000\075\000\
+\028\000\028\000\028\000\028\000\028\000\023\000\077\000\023\000\
+\023\000\080\000\056\000\023\000\023\000\003\000\023\000\031\000\
+\023\000\023\000\023\000\023\000\023\000\000\000\000\000\023\000\
+\023\000\023\000\023\000\023\000\023\000\000\000\023\000\023\000\
+\023\000\023\000\023\000\024\000\000\000\024\000\024\000\000\000\
+\000\000\024\000\024\000\000\000\024\000\000\000\024\000\024\000\
+\024\000\024\000\024\000\000\000\000\000\024\000\024\000\024\000\
+\024\000\024\000\024\000\016\000\024\000\024\000\024\000\024\000\
+\024\000\016\000\016\000\000\000\016\000\000\000\016\000\016\000\
+\016\000\016\000\016\000\000\000\000\000\016\000\016\000\016\000\
+\016\000\016\000\016\000\015\000\016\000\016\000\016\000\016\000\
+\016\000\015\000\015\000\000\000\015\000\000\000\015\000\015\000\
+\015\000\015\000\015\000\000\000\000\000\015\000\015\000\015\000\
+\015\000\015\000\015\000\000\000\015\000\015\000\015\000\015\000\
+\015\000\021\000\000\000\021\000\021\000\021\000\000\000\021\000\
+\000\000\000\000\021\000\000\000\000\000\021\000\021\000\000\000\
+\000\000\000\000\021\000\000\000\021\000\021\000\003\000\000\000\
+\004\000\005\000\006\000\000\000\007\000\036\000\037\000\038\000\
+\039\000\000\000\008\000\009\000\000\000\000\000\000\000\010\000\
+\000\000\011\000\012\000\000\000\000\000\000\000\048\000\049\000\
+\036\000\037\000\038\000\039\000\040\000\028\000\028\000\028\000\
+\028\000\028\000\027\000\027\000\027\000\027\000\027\000\036\000\
+\037\000\038\000\039\000"
 
-let yycheck = "\003\000\
-\000\000\037\000\001\000\007\000\027\000\041\000\006\001\007\001\
-\003\001\000\000\011\001\005\001\011\001\036\000\018\000\008\001\
-\002\001\011\001\024\001\002\001\014\001\012\001\010\001\059\000\
-\028\000\029\000\030\000\031\000\032\000\024\001\000\000\025\001\
-\005\001\020\001\038\000\039\000\011\001\003\001\011\001\000\000\
-\013\001\014\001\015\001\012\001\009\001\016\001\050\000\005\001\
-\000\000\255\255\023\001\255\255\025\001\011\001\000\000\255\255\
-\014\001\020\001\020\001\005\001\018\001\019\001\255\255\255\255\
-\255\255\011\001\255\255\025\001\014\001\015\001\004\001\005\001\
-\006\001\007\001\255\255\255\255\255\255\023\001\255\255\025\001\
-\004\001\005\001\006\001\007\001\255\255\009\001\255\255\021\001\
-\022\001\004\001\005\001\006\001\007\001\008\001\004\001\005\001\
-\006\001\007\001\008\001\004\001\005\001\006\001\007\001\008\001\
-\004\001\005\001\006\001\007\001\255\255\255\255\255\255\255\255\
-\255\255\255\255\255\255\255\255\255\255\255\255\255\255\255\255\
-\255\255\255\255\255\255\255\255\255\255\255\255\255\255\255\255\
-\255\255\255\255\255\255\255\255\255\255\255\255\255\255\255\255\
-\255\255\255\255\255\255\255\255\255\255\255\255\255\255\255\255\
-\255\255\255\255\255\255\255\255\255\255\255\255\255\255\255\255\
-\255\255\255\255\255\255\255\255\255\255\255\255\255\255\255\255\
-\255\255\255\255\255\255\255\255\255\255\255\255\255\255\255\255\
-\255\255\255\255\255\255\255\255\255\255\255\255\255\255\255\255\
-\255\255\255\255\255\255\255\255\255\255\255\255\255\255\255\255\
-\255\255\255\255\255\255\255\255\255\255\255\255\255\255\255\255\
-\255\255\255\255\255\255\255\255\255\255\255\255\255\255\255\255\
-\255\255\255\255\255\255\255\255\255\255\255\255\255\255\255\255\
-\255\255\255\255\255\255\255\255\255\255\255\255\255\255\255\255\
-\255\255\255\255\255\255\255\255\255\255\255\255\255\255\255\255\
-\255\255\255\255\255\255\255\255\255\255\255\255\255\255\255\255\
-\255\255\255\255\255\255\255\255\255\255\255\255\255\255\255\255\
-\255\255\255\255\255\255\255\255\255\255\255\255\255\255\255\255\
-\255\255\255\255\255\255\255\255\255\255\255\255\255\255\255\255\
-\255\255\255\255\002\001\255\255\004\001\005\001\006\001\007\001\
-\008\001\009\001\255\255\002\001\255\255\004\001\005\001\255\255\
-\016\001\008\001\009\001\255\255\020\001\021\001\022\001\255\255\
-\255\255\016\001\255\255\255\255\255\255\020\001\021\001\022\001\
-\002\001\255\255\004\001\005\001\255\255\255\255\008\001\009\001\
-\255\255\002\001\255\255\255\255\255\255\255\255\016\001\008\001\
-\009\001\255\255\020\001\021\001\022\001\255\255\255\255\016\001\
-\002\001\255\255\255\255\020\001\021\001\022\001\008\001\009\001\
-\255\255\255\255\255\255\255\255\255\255\255\255\016\001\255\255\
-\255\255\255\255\020\001\021\001\022\001"
+let yycheck = "\010\000\
+\003\001\002\001\001\000\006\000\007\000\011\001\011\001\011\001\
+\019\000\011\001\014\001\013\001\014\001\015\001\008\001\017\001\
+\006\001\007\001\020\001\022\000\031\000\023\001\024\001\026\001\
+\025\001\002\001\028\001\031\001\030\001\031\001\027\001\042\000\
+\043\000\036\000\037\000\038\000\039\000\040\000\002\001\008\001\
+\051\000\012\001\010\001\054\000\055\000\048\000\049\000\004\001\
+\005\001\006\001\007\001\011\001\009\001\026\001\014\001\020\001\
+\011\001\003\001\018\001\019\001\012\001\064\000\073\000\002\001\
+\075\000\004\001\005\001\006\001\007\001\008\001\009\001\031\001\
+\011\001\009\001\013\001\014\001\015\001\016\001\017\001\002\001\
+\029\001\020\001\021\001\022\001\023\001\024\001\025\001\016\001\
+\027\001\028\001\029\001\030\001\031\001\002\001\029\001\004\001\
+\005\001\009\001\035\000\008\001\009\001\027\001\011\001\007\000\
+\013\001\014\001\015\001\016\001\017\001\255\255\255\255\020\001\
+\021\001\022\001\023\001\024\001\025\001\255\255\027\001\028\001\
+\029\001\030\001\031\001\002\001\255\255\004\001\005\001\255\255\
+\255\255\008\001\009\001\255\255\011\001\255\255\013\001\014\001\
+\015\001\016\001\017\001\255\255\255\255\020\001\021\001\022\001\
+\023\001\024\001\025\001\002\001\027\001\028\001\029\001\030\001\
+\031\001\008\001\009\001\255\255\011\001\255\255\013\001\014\001\
+\015\001\016\001\017\001\255\255\255\255\020\001\021\001\022\001\
+\023\001\024\001\025\001\002\001\027\001\028\001\029\001\030\001\
+\031\001\008\001\009\001\255\255\011\001\255\255\013\001\014\001\
+\015\001\016\001\017\001\255\255\255\255\020\001\021\001\022\001\
+\023\001\024\001\025\001\255\255\027\001\028\001\029\001\030\001\
+\031\001\011\001\255\255\013\001\014\001\015\001\255\255\017\001\
+\255\255\255\255\020\001\255\255\255\255\023\001\024\001\255\255\
+\255\255\255\255\028\001\255\255\030\001\031\001\011\001\255\255\
+\013\001\014\001\015\001\255\255\017\001\004\001\005\001\006\001\
+\007\001\255\255\023\001\024\001\255\255\255\255\255\255\028\001\
+\255\255\030\001\031\001\255\255\255\255\255\255\021\001\022\001\
+\004\001\005\001\006\001\007\001\008\001\004\001\005\001\006\001\
+\007\001\008\001\004\001\005\001\006\001\007\001\008\001\004\001\
+\005\001\006\001\007\001"
 
 let yynames_const = "\
   EOL\000\
@@ -1000,7 +1604,13 @@ let yynames_const = "\
   EQUAL\000\
   LIGHTER\000\
   MALLOCDEF\000\
+  SKIPDEF\000\
+  PARALLEL\000\
   DOT\000\
+  END\000\
+  LBRACKET\000\
+  RBRACKET\000\
+  ATOMDEF\000\
   "
 
 let yynames_block = "\
@@ -1012,193 +1622,245 @@ let yynames_block = "\
 let yyact = [|
   (fun _ -> failwith "parser")
 ; (fun __caml_parser_env ->
-    let _1 = (Parsing.peek_val __caml_parser_env 0 : int) in
+    let _1 = (Parsing.peek_val __caml_parser_env 1 : int) in
     Obj.repr(
-# 814 "calculatorYACC.mly"
-          ( output "----------\n"; print_int _1 ; print_newline(); flush stdout; () )
-# 1020 "calculatorYACC.ml"
+# 1414 "calculatorYACC.mly"
+                                           ( output "----prog------\n"; print_newline(); flush stdout; () )
+# 1630 "calculatorYACC.ml"
                : unit))
 ; (fun __caml_parser_env ->
-    let _2 = (Parsing.peek_val __caml_parser_env 2 :  string ) in
-    let _4 = (Parsing.peek_val __caml_parser_env 0 : int) in
+    let _1 = (Parsing.peek_val __caml_parser_env 2 : int) in
+    let _3 = (Parsing.peek_val __caml_parser_env 0 : int) in
     Obj.repr(
-# 817 "calculatorYACC.mly"
-                                  (output ("VAR " ^ _2 ); declareVar _2; printsb !g_tSb; 0)
-# 1028 "calculatorYACC.ml"
+# 1417 "calculatorYACC.mly"
+                                        ( print_string ("----list----\n");  _3 )
+# 1638 "calculatorYACC.ml"
+               : int))
+; (fun __caml_parser_env ->
+    let _1 = (Parsing.peek_val __caml_parser_env 0 : int) in
+    Obj.repr(
+# 1418 "calculatorYACC.mly"
+                                        ( print_string ("----list----\n"); _1 )
+# 1645 "calculatorYACC.ml"
                : int))
 ; (fun __caml_parser_env ->
     let _1 = (Parsing.peek_val __caml_parser_env 2 : int) in
     let _3 = (Parsing.peek_val __caml_parser_env 0 : int) in
     Obj.repr(
-# 818 "calculatorYACC.mly"
-                        ( print_string ("--------\n"); _3 )
-# 1036 "calculatorYACC.ml"
-               : int))
-; (fun __caml_parser_env ->
-    let _1 = (Parsing.peek_val __caml_parser_env 0 : int) in
-    Obj.repr(
-# 819 "calculatorYACC.mly"
-                        ( print_string ("--------\n"); _1 )
-# 1043 "calculatorYACC.ml"
+# 1421 "calculatorYACC.mly"
+                                          (_3)
+# 1653 "calculatorYACC.ml"
                : int))
 ; (fun __caml_parser_env ->
     let _2 = (Parsing.peek_val __caml_parser_env 4 : int) in
     let _4 = (Parsing.peek_val __caml_parser_env 2 : int) in
     let _6 = (Parsing.peek_val __caml_parser_env 0 : int) in
     Obj.repr(
-# 822 "calculatorYACC.mly"
-                                                (output ("if else"); handleIfElse _2 _4 _6)
-# 1052 "calculatorYACC.ml"
+# 1422 "calculatorYACC.mly"
+                                                (condEval _2 _4 _6)
+# 1662 "calculatorYACC.ml"
                : int))
 ; (fun __caml_parser_env ->
     let _3 = (Parsing.peek_val __caml_parser_env 1 :  string ) in
     Obj.repr(
-# 823 "calculatorYACC.mly"
-                                     (output ("MALLOC " ^ _3 ); addObj _3)
-# 1059 "calculatorYACC.ml"
+# 1423 "calculatorYACC.mly"
+                                        (output ("TODO MALLOC " ^ _3 ); createObj _3;0)
+# 1669 "calculatorYACC.ml"
+               : int))
+; (fun __caml_parser_env ->
+    Obj.repr(
+# 1424 "calculatorYACC.mly"
+                                        (skipEval;0)
+# 1675 "calculatorYACC.ml"
+               : int))
+; (fun __caml_parser_env ->
+    let _2 = (Parsing.peek_val __caml_parser_env 1 : int) in
+    let _3 = (Parsing.peek_val __caml_parser_env 0 : int) in
+    Obj.repr(
+# 1425 "calculatorYACC.mly"
+                                        (whileEval _2 _3)
+# 1683 "calculatorYACC.ml"
+               : int))
+; (fun __caml_parser_env ->
+    let _2 = (Parsing.peek_val __caml_parser_env 3 : int) in
+    let _4 = (Parsing.peek_val __caml_parser_env 1 : int) in
+    Obj.repr(
+# 1426 "calculatorYACC.mly"
+                                        (seqEval _2 _4)
+# 1691 "calculatorYACC.ml"
                : int))
 ; (fun __caml_parser_env ->
     let _1 = (Parsing.peek_val __caml_parser_env 0 : int) in
     Obj.repr(
-# 824 "calculatorYACC.mly"
+# 1427 "calculatorYACC.mly"
                                         (  _1 )
-# 1066 "calculatorYACC.ml"
+# 1698 "calculatorYACC.ml"
                : int))
 ; (fun __caml_parser_env ->
     let _1 = (Parsing.peek_val __caml_parser_env 0 : int) in
     Obj.repr(
-# 825 "calculatorYACC.mly"
-                                        ( output "rec call: "; print_int _1; print_newline();print_newline(); flush stdout;_1)
-# 1073 "calculatorYACC.ml"
+# 1428 "calculatorYACC.mly"
+                                        ( _1)
+# 1705 "calculatorYACC.ml"
+               : int))
+; (fun __caml_parser_env ->
+    let _1 = (Parsing.peek_val __caml_parser_env 5 : unit) in
+    let _3 = (Parsing.peek_val __caml_parser_env 3 : int) in
+    let _5 = (Parsing.peek_val __caml_parser_env 1 : int) in
+    Obj.repr(
+# 1429 "calculatorYACC.mly"
+                                                   (g_bAtom := false; atomEval _3 _5)
+# 1714 "calculatorYACC.ml"
+               : int))
+; (fun __caml_parser_env ->
+    let _2 = (Parsing.peek_val __caml_parser_env 3 : int) in
+    let _4 = (Parsing.peek_val __caml_parser_env 1 : int) in
+    Obj.repr(
+# 1430 "calculatorYACC.mly"
+                                        (parallelEval _2 _4)
+# 1722 "calculatorYACC.ml"
                : int))
 ; (fun __caml_parser_env ->
     let _1 = (Parsing.peek_val __caml_parser_env 3 : int) in
     let _3 = (Parsing.peek_val __caml_parser_env 1 : int) in
     Obj.repr(
-# 828 "calculatorYACC.mly"
-                              (output ((string_of_int _1) ^ "(" ^ (string_of_int _3) ^ ")"); printHandleProc _1 _3; (handleProc _1 _3))
-# 1081 "calculatorYACC.ml"
+# 1433 "calculatorYACC.mly"
+                              (output ((string_of_int _1) ^ "(" ^ (string_of_int _3) ^ ")"); (runReccall _1 _3))
+# 1730 "calculatorYACC.ml"
                : int))
 ; (fun __caml_parser_env ->
     let _1 = (Parsing.peek_val __caml_parser_env 4 :  string ) in
     let _3 = (Parsing.peek_val __caml_parser_env 2 :  string ) in
     let _5 = (Parsing.peek_val __caml_parser_env 0 : int) in
     Obj.repr(
-# 831 "calculatorYACC.mly"
-                               ( handleFieldAssign _1 _3 !g_stType _5 )
-# 1090 "calculatorYACC.ml"
+# 1436 "calculatorYACC.mly"
+                               ( assignEval (fieldEval _1 _3) _5)
+# 1739 "calculatorYACC.ml"
                : int))
 ; (fun __caml_parser_env ->
     let _1 = (Parsing.peek_val __caml_parser_env 2 :  string ) in
     let _3 = (Parsing.peek_val __caml_parser_env 0 : int) in
     Obj.repr(
-# 832 "calculatorYACC.mly"
-                     ( (addVar _1);(handleAssign _1 !g_stType _3) )
-# 1098 "calculatorYACC.ml"
+# 1437 "calculatorYACC.mly"
+                     ( (assignEval (varEval _1) _3) )
+# 1747 "calculatorYACC.ml"
                : int))
 ; (fun __caml_parser_env ->
     Obj.repr(
-# 835 "calculatorYACC.mly"
-                          (addDirectCmd "true")
-# 1104 "calculatorYACC.ml"
+# 1440 "calculatorYACC.mly"
+                          (createBool "true")
+# 1753 "calculatorYACC.ml"
                : int))
 ; (fun __caml_parser_env ->
     Obj.repr(
-# 836 "calculatorYACC.mly"
-                          (addDirectCmd "false")
-# 1110 "calculatorYACC.ml"
+# 1441 "calculatorYACC.mly"
+                          (createBool "false")
+# 1759 "calculatorYACC.ml"
                : int))
 ; (fun __caml_parser_env ->
     let _1 = (Parsing.peek_val __caml_parser_env 1 : int) in
     let _2 = (Parsing.peek_val __caml_parser_env 0 : int) in
     Obj.repr(
-# 837 "calculatorYACC.mly"
-                       (handleCmp _1 _2)
-# 1118 "calculatorYACC.ml"
+# 1442 "calculatorYACC.mly"
+                       (bexprEval _1 !cmpop _2)
+# 1767 "calculatorYACC.ml"
                : int))
 ; (fun __caml_parser_env ->
     let _2 = (Parsing.peek_val __caml_parser_env 0 : int) in
     Obj.repr(
-# 840 "calculatorYACC.mly"
+# 1445 "calculatorYACC.mly"
                      ( cmpop := "="; _2)
-# 1125 "calculatorYACC.ml"
+# 1774 "calculatorYACC.ml"
                : int))
 ; (fun __caml_parser_env ->
     let _2 = (Parsing.peek_val __caml_parser_env 0 : int) in
     Obj.repr(
-# 841 "calculatorYACC.mly"
+# 1446 "calculatorYACC.mly"
                      ( cmpop := "<"; _2)
-# 1132 "calculatorYACC.ml"
+# 1781 "calculatorYACC.ml"
                : int))
 ; (fun __caml_parser_env ->
-    let _2 = (Parsing.peek_val __caml_parser_env 2 :  string ) in
-    let _4 = (Parsing.peek_val __caml_parser_env 0 : int) in
-    Obj.repr(
-# 844 "calculatorYACC.mly"
-                              ((output ("proc " ^ _2 ^ ":")); g_stType := "proc"; g_stPara := _2; _4)
-# 1140 "calculatorYACC.ml"
-               : int))
-; (fun __caml_parser_env ->
-    let _1 = (Parsing.peek_val __caml_parser_env 2 : int) in
-    let _3 = (Parsing.peek_val __caml_parser_env 0 : int) in
-    Obj.repr(
-# 845 "calculatorYACC.mly"
-                             ( g_stType := "int"; handleBinop  _1 "+" _3 )
-# 1148 "calculatorYACC.ml"
-               : int))
-; (fun __caml_parser_env ->
-    let _1 = (Parsing.peek_val __caml_parser_env 2 : int) in
-    let _3 = (Parsing.peek_val __caml_parser_env 0 : int) in
-    Obj.repr(
-# 846 "calculatorYACC.mly"
-                             ( g_stType := "int"; handleBinop  _1 "-" _3 )
-# 1156 "calculatorYACC.ml"
-               : int))
-; (fun __caml_parser_env ->
-    let _1 = (Parsing.peek_val __caml_parser_env 2 : int) in
-    let _3 = (Parsing.peek_val __caml_parser_env 0 : int) in
-    Obj.repr(
-# 847 "calculatorYACC.mly"
-                             ( _1 * _3 )
-# 1164 "calculatorYACC.ml"
-               : int))
-; (fun __caml_parser_env ->
-    let _1 = (Parsing.peek_val __caml_parser_env 2 : int) in
-    let _3 = (Parsing.peek_val __caml_parser_env 0 : int) in
-    Obj.repr(
-# 848 "calculatorYACC.mly"
-                             ( _1 / _3 )
-# 1172 "calculatorYACC.ml"
-               : int))
-; (fun __caml_parser_env ->
+    let _1 = (Parsing.peek_val __caml_parser_env 1 : string) in
     let _2 = (Parsing.peek_val __caml_parser_env 0 : int) in
     Obj.repr(
-# 849 "calculatorYACC.mly"
-                             ( - _2 )
-# 1179 "calculatorYACC.ml"
+# 1449 "calculatorYACC.mly"
+                            (g_bInProc := false; g_sPara := ""; procDeclare _1 _2)
+# 1789 "calculatorYACC.ml"
+               : int))
+; (fun __caml_parser_env ->
+    let _1 = (Parsing.peek_val __caml_parser_env 2 : int) in
+    let _3 = (Parsing.peek_val __caml_parser_env 0 : int) in
+    Obj.repr(
+# 1450 "calculatorYACC.mly"
+                             ( g_stType := "int"; binopEval  _1 "+" _3 )
+# 1797 "calculatorYACC.ml"
+               : int))
+; (fun __caml_parser_env ->
+    let _1 = (Parsing.peek_val __caml_parser_env 2 : int) in
+    let _3 = (Parsing.peek_val __caml_parser_env 0 : int) in
+    Obj.repr(
+# 1451 "calculatorYACC.mly"
+                             ( g_stType := "int"; binopEval  _1 "-" _3 )
+# 1805 "calculatorYACC.ml"
+               : int))
+; (fun __caml_parser_env ->
+    let _1 = (Parsing.peek_val __caml_parser_env 2 : int) in
+    let _3 = (Parsing.peek_val __caml_parser_env 0 : int) in
+    Obj.repr(
+# 1452 "calculatorYACC.mly"
+                             ( _1 * _3 )
+# 1813 "calculatorYACC.ml"
+               : int))
+; (fun __caml_parser_env ->
+    let _1 = (Parsing.peek_val __caml_parser_env 2 : int) in
+    let _3 = (Parsing.peek_val __caml_parser_env 0 : int) in
+    Obj.repr(
+# 1453 "calculatorYACC.mly"
+                             ( _1 / _3 )
+# 1821 "calculatorYACC.ml"
                : int))
 ; (fun __caml_parser_env ->
     let _1 = (Parsing.peek_val __caml_parser_env 2 :  string ) in
     let _3 = (Parsing.peek_val __caml_parser_env 0 :  string ) in
     Obj.repr(
-# 850 "calculatorYACC.mly"
-                              (output ("find field:" ^ _1 ^ "." ^ _3); handleField _1 _3)
-# 1187 "calculatorYACC.ml"
+# 1454 "calculatorYACC.mly"
+                              (output ("find field:" ^ _1 ^ "." ^ _3); fieldEval _1 _3)
+# 1829 "calculatorYACC.ml"
                : int))
 ; (fun __caml_parser_env ->
     let _1 = (Parsing.peek_val __caml_parser_env 0 :  string ) in
     Obj.repr(
-# 851 "calculatorYACC.mly"
-                           ( output ("find var:" ^ _1); (addVar _1) )
-# 1194 "calculatorYACC.ml"
+# 1455 "calculatorYACC.mly"
+                           ( varEval _1 )
+# 1836 "calculatorYACC.ml"
                : int))
 ; (fun __caml_parser_env ->
     let _1 = (Parsing.peek_val __caml_parser_env 0 :  int ) in
     Obj.repr(
-# 852 "calculatorYACC.mly"
-                             ( (output ("find num:\t" ^ (string_of_int _1))); g_stType := "int";(handleNum _1) )
-# 1201 "calculatorYACC.ml"
+# 1456 "calculatorYACC.mly"
+                             ( (output ("find num:\t" ^ (string_of_int _1))); g_stType := "int";(numEval _1) )
+# 1843 "calculatorYACC.ml"
                : int))
+; (fun __caml_parser_env ->
+    let _2 = (Parsing.peek_val __caml_parser_env 0 :  string ) in
+    Obj.repr(
+# 1459 "calculatorYACC.mly"
+                          (print_string ("find var:" ^ _2 ^ "\n"); varDeclare _2 ;0)
+# 1850 "calculatorYACC.ml"
+               : int))
+; (fun __caml_parser_env ->
+    let _2 = (Parsing.peek_val __caml_parser_env 1 :  string ) in
+    Obj.repr(
+# 1462 "calculatorYACC.mly"
+                        (print_string("proc def:\n"); g_bInProc := true; g_sPara := _2; _2)
+# 1857 "calculatorYACC.ml"
+               : string))
+; (fun __caml_parser_env ->
+    Obj.repr(
+# 1465 "calculatorYACC.mly"
+                        (g_bAtom := true)
+# 1863 "calculatorYACC.ml"
+               : unit))
 (* Entry prog *)
 ; (fun __caml_parser_env -> raise (Parsing.YYexit (Parsing.peek_val __caml_parser_env 0)))
 |]
@@ -1222,6 +1884,6 @@ let yytables =
 let prog (lexfun : Lexing.lexbuf -> token) (lexbuf : Lexing.lexbuf) =
    (Parsing.yyparse yytables 1 lexfun lexbuf : unit)
 ;;
-# 853 "calculatorYACC.mly"
+# 1467 "calculatorYACC.mly"
  (* trailer *)
-# 1228 "calculatorYACC.ml"
+# 1890 "calculatorYACC.ml"

@@ -7,7 +7,7 @@ exception Eof;;
 }
 rule token = parse
     [' ' '\t' '\n'] { token lexbuf } (* skip blanks and tabs *)
-  | "#"         {END}
+  | '#'         {END}
   | "var"      {VARDEF}
   | "proc"      {PROCDEF}
   | "if"        {IFDEF}
@@ -17,9 +17,6 @@ rule token = parse
   | "true"      {TRUEDEF}
   | "false"     {FALSEDEF}
   | "malloc"     {MALLOCDEF}
-  | "skip"      {SKIPDEF}
-  | "atom"      {ATOMDEF}
-  | "|||"       {PARALLEL}
   | (['a'-'z'])(['a'-'z'] | ['A'-'Z'] | ['0'-'9'])* as var
                { VAR var }
   | (['A'-'Z'])(['a'-'z'] | ['A'-'Z'] | ['0'-'9'])* as fld
@@ -38,8 +35,8 @@ rule token = parse
   | '/'        { DIV }
   | '('        { LPAREN }
   | ')'        { RPAREN }
-  | '{'        { LBRACKET }
-  | '}'        { RBRACKET }
+  | "{"         {LBRACKET}
+  | "}"         {RBRACKET}
   | eof        { raise Eof }
   | _ as c     { print_string "incorrect lexem:"; print_char c; 
                  print_string ": code :"; print_int (int_of_char c); 
