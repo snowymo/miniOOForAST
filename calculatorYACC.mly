@@ -1,25 +1,10 @@
 /* File calculatorYACC.mly */
 
 %{ (* header *)
-(* unused *)
-let returnProc = -1;;
-let procId : int ref = ref 0;;  (* indicates the fid of procedure *)
-let varId : int ref = ref 0;;
-type procList = (int * string) list;; (* proc fid and proc name *)
-let prl = ref([] : procList) ;;
-type varList = (string * ( string * int)) list ;; (* var name, for procedure using, 'y' for value and 'n' for future assignment *)
-let vl = ref( [] : varList);;
-let g_lSb = ref([] : procList);;  (*symbol list: fid, name*)
-let returnNum = -2;;
 
 (* in use *)
-let g_stType : string ref = ref "nil";; (* indicates the type of var *)
 let g_stPara : string ref = ref "nil";; (* indicates the name of the parameter *)
 
-let cmdId : int ref = ref 0;;  (* indicates the fid of cmd, when cmd does not have a value then, it might be a part of a proc, so let's generate an fid for it *)
-
-let procToRun : string ref = ref "nil";;
-let isCmdInProc : bool ref = ref false;;    (* flag that if some par no show, it could be cmd in proc *)
 let cmpop : string ref = ref "nil";;
 
   (* variable name + defined or not + type + value *)
@@ -55,9 +40,6 @@ type heapTable = (int * ( string * (string * int))) list;; (* pos(var,(field,val
 let g_tHeap = ref([] : heapTable);;
 let g_tHeapAtom = ref([] : heapTable);;
 
-type envMap = (string * int) list;;   (* name,pos *)
-let g_mEnv = ref([] : envMap);;
-
 type stackTable = (int * (string * int )) list;; (* stack id ( var name ( pos in heap)*)
 let g_tStack = ref([] : stackTable);;
 
@@ -89,7 +71,8 @@ let g_bInProc : bool ref = ref false;;
 let g_sPara : string ref = ref "";;
 let g_iPara : int ref = ref (-1);;
 let g_bAtom : bool ref = ref false;;
-
+let g_AST : string ref = ref "";;
+let g_idxAST : string ref = ref "";;
 
 let rec printStackHelp l = (
     match l with
@@ -143,180 +126,18 @@ let generateId refid = (
   !refid - 1
   );;
 
-let rec printvarlist l = match l with
-  [] -> print_newline() ; flush stdout
-  |  h :: t -> print_string ((fst h) ^ "\t" ^ fst(snd h) ^ "\t"); 
-    if(fst(snd h) = "y") then (print_int (snd(snd h))); 
-    print_newline(); flush stdout; printvarlist t
-  ;;
-
 let rec printBOP l = match l with
   [] -> print_newline() ; flush stdout
   |  h :: t -> print_string("cmd: "); print_int (fst h); print_string ("\top: " ^ fst(snd h) ^ "\t"); print_int (fst(snd(snd h))); print_string ("\t"); print_int(snd(snd(snd h)));print_newline();flush stdout; printBOP t
   ;;
 
-let rec printASS l = match l with
-  [] -> print_newline() ; flush stdout
-  |  h :: t -> print_string("cmd: "); print_int (fst h); print_string ("\tleft: " ^ fst(snd h) ^ "\tequals cmd:"); print_int (snd(snd h)); printASS t
-  ;;
 
-let rec printProc l = match l with
-  [] -> print_newline() ; flush stdout
-  |  h :: t ->  print_string("proc: " ^ (fst h) ^ "\tpara: " ^ fst(snd h) ^ "\tcmd: "); print_int (snd(snd h)); printProc t
-  ;;
-
-let rec printProcList l = match l with
-  [] -> print_newline() ; flush stdout
-  |  h :: t ->  print_string("proc: "); print_int (fst h); print_string ("\t" ^ snd h ^ "\n"); printProcList t
-  ;;
 
 let rec printCmdList l = match l with
 [] -> print_newline(); flush stdout
 | h :: t -> print_string("cmd: "); print_int(fst h); print_string(":\t" ^ snd(h) ^ "\n"); printCmdList t
 ;;
 
-let rec getIdByValue fid list= (
-    match list with
-    [] -> -1
-    | h::t -> if(snd (h) = fid) then (fst (h)) else (getIdByValue fid t)
-  );;
-
-let addVar variable = 
-  if(List.mem_assoc variable !g_tProc) then(
-    printProc !g_tProc;
-    procToRun := variable;
-    snd (List.assoc variable !g_tProc)
-    )
-  else (
-    if(List.mem_assoc variable !g_tSb) then(
-        getIdByValue variable !g_lVar
-      )
-    else(
-        let i = (generateId cmdId) in (
-          g_lVar := (i,variable) :: !g_lVar;
-          g_tCmd := (i, "var") :: !g_tCmd;
-          printCmdList !g_tCmd;
-          if( List.mem_assoc variable !g_tSb) then(
-            
-          )
-          else(
-            g_tSb := (variable, ("U",("nil",0))) :: !g_tSb
-            );
-          printsb !g_tSb;
-          i
-        )
-    )
-  );;
-
-let getValueFromNum v =
-  if(List.mem_assoc v !g_lNum) then(
-      print_string (string_of_int (List.assoc v !g_lNum) ^ "\n");
-      List.assoc v !g_lNum
-    )
-  else
-    (print_string ("num not found.\n");-1)
-;;
-
-let getValInTuple t = 
-  let (_t,_v) = t;
-    in (if(_t = "nil") then -1 else getValueFromNum _v);;
-
-let getvalue x =
-   if (List.mem_assoc x !g_tSb) then 
-   (if(fst (snd (List.assoc x !g_tSb)) = "proc") then
-      (print_string "we need to run this proc.\n";
-        procToRun := x;
-        0)
-    else
-      getValInTuple (snd(List.assoc x !g_tSb))
-    )
-   else
-     0;;
-
-
-
-let getValueByCmd v = 
-  if(List.mem_assoc v !g_tCmd) then
-(
-  match (List.assoc v !g_tCmd) with
-    "num" -> (getValueFromNum v)
-  | "var" -> (getvalue  (List.assoc v !g_lVar))
-  | "true" -> (print_string("it is true.\n");1024)
-  | "false" -> (print_string("it is false.\n");1023)
-  | "field" -> (getvalue  (List.assoc v !g_lVar))
-  | _  -> (print_string ("cmd type not found.\n");-1)
-  )
-  else
-    (print_string ("cmd fid not found.\n");-1)
-  ;;
-
-let handleNum n = (
-  let newid = generateId cmdId in (
-    g_lNum := (newid,n) :: !g_lNum;
-    printNumList !g_lNum;
-    g_tCmd := (newid, "num") :: !g_tCmd;
-    printCmdList !g_tCmd;
-    newid
-    )
-  );;
-
-let handleAssignNProc x t value = 
-(
-  if (List.mem_assoc x !g_tSb) then
-          (match t with
-          | "int"  -> (g_tSb := (x, ("D" ,(t, handleNum (getValueByCmd value)))) :: (except (x, (List.assoc x !g_tSb)) !g_tSb))
-          | "proc"  -> (g_tSb := (x, ("D" ,(t, value))) :: (except (x, (List.assoc x !g_tSb)) !g_tSb))
-          | _ -> print_string ("no match with " ^ t ^ "\t"); print_int value
-          )
-     else
-      g_tSb := (x,("U",(t,handleNum (getValueByCmd value)))) :: !g_tSb;
-  printsb !g_tSb;
-  flush stdout;
-  0
-) ;;
-
-let declareProc pid p y c = 
-  g_tCmd := (pid, "proc") :: !g_tCmd;
-  print_string ("now in declare proc.\n");
-  if( List.mem_assoc pid !prl) then
-    prl := (pid,p) :: (except (pid, (List.assoc pid !prl)) !prl)
-  else
-    prl := (pid, p) :: !prl;
-  g_tProc := (p, (y,c)) :: !g_tProc
-  ;;
-
-let handleAssignInHelp cid = (
-    match List.assoc cid !g_tCmd with
-    "num" -> cid
-    | "var" -> handleNum (getValueByCmd cid)
-    | "field" -> (
-      if( fst(List.assoc (List.assoc cid !g_lVar) !g_tSb) = "D") then 
-        handleNum (snd(snd(List.assoc (List.assoc cid !g_lVar) !g_tSb)) )
-      else (
-        cid
-        )
-      )
-    | _ -> cid
-  );;
-
-
-
-let declareVar x=
-  if( List.mem_assoc x !g_tSb) then(
-    g_tSb := (x, ("D", snd(List.assoc x !g_tSb))) :: (except (x, (List.assoc x !g_tSb)) !g_tSb);
-    print_string ("declareVar: found in sb");
-    print_string (x);
-    print_newline();
-    )
-    
-  else(
-    g_tSb := (x, ("U", ("nil", 0))) ::  !g_tSb;
-    print_string ("declareVar: not found in sb");
-    print_string (x);
-    print_newline();
-    )
-    
-    ;;
 
 let equal x y =
    if (x = y) then 
@@ -331,116 +152,6 @@ let lt x y =
      false;;
 
 
-
-let getvalueProc x procSb =
-   if (List.mem_assoc x !procSb) then 
-      getValInTuple (List.assoc x !procSb)
-   else
-     (if (List.mem_assoc x !g_tSb) then 
-        getValInTuple (snd(List.assoc x !g_tSb))
-      else(
-        print_string (x ^ " not declared,\n");
-        0)
-   );;
-
-let printHandleProc pname para = (
-  print_string ("ready to run:" ^ !procToRun ^ "\tcmd: ");
-  print_int pname;
-  print_string "\t";
-  print_int para;
-  print_newline();
-  flush stdout;
-  ) ;;
-
-let getParaVal paraname= (
-  if(List.mem_assoc paraname !vl) then(
-      snd (List.assoc paraname !vl)
-    )
-  else
-    -1
-  );;
-
-let handleNum n = (
-  let newid = generateId cmdId in (
-    g_lNum := (newid,n) :: !g_lNum;
-    printNumList !g_lNum;
-    g_tCmd := (newid, "num") :: !g_tCmd;
-    printCmdList !g_tCmd;
-    newid
-    )
-  );;
-
-let addDirectCmd direct = (
-    let i = generateId cmdId in(
-        g_tCmd := (i,direct) :: !g_tCmd;
-        printCmdList !g_tCmd;
-        i)
-  )
-;;
-
-let extractBop varid = (
-  if(List.mem_assoc varid !g_tCmd) then(
-    match List.assoc varid !g_tCmd with
-    "num" -> let ret = List.assoc varid !g_lNum in (print_string ("num of " ^ (string_of_int varid) ^ " : " ^ (string_of_int ret) ^ "\n"); ret)
-    | "var" -> let ret = (List.assoc (snd(snd(List.assoc (List.assoc varid !g_lVar) !g_tSb))) !g_lNum) in (print_string ("var:\t" ^ (string_of_int ret) ^ "\n");ret)
-    | _ -> print_string ("not valid type.\n"); -1
-    )
-  else
-    (print_string ("varid not in cmd list.\n");-1)
-  )
-
-let handleBop cid = (
-  print_string ("binary operation:\t");
-  let (_op,(_a,_b)) = (List.assoc cid !g_tBop) in
-    (
-      print_int (_a); print_string ("\t" ^ _op ^ "\t"); print_int (_b); print_newline();
-      match _op with
-      "+" -> (
-              print_int (extractBop _a); print_string ("\t" ^ _op ^ "\t"); print_int (extractBop _b); print_newline();
-               (handleNum ((extractBop _a) + (extractBop _b)))
-              )
-      |"-" -> (
-              print_string ((string_of_int (extractBop _a)) ^ "\t" ^ _op ^ "\t" ^ (string_of_int (extractBop _b)) ^ "\n");
-               (handleNum ((extractBop _a) - (extractBop _b)))
-              )
-      | "<" -> (
-            print_string ((string_of_int (extractBop _a)) ^ "\t" ^ _op ^ "\t" ^ (string_of_int (extractBop _b)) ^ "\n"); 
-            if((extractBop _a) < (extractBop _b)) then(
-              addDirectCmd "true"
-              )
-            else(
-              addDirectCmd "false"
-              )
-            )
-      | _ -> (print_string ("operation not found\n");-1)
-    )
-    );;
-
-let rec setProcParaHelp pnm pval = (
-    if(List.assoc pval !g_tCmd = "binop") then
-      handleBop pval
-    else
-      pval
-  );;
-
-let rec setProcPara pnm pval = (
-  (*calculate pval first if it is not num*)
-  let newpval = setProcParaHelp pnm pval in
-    (
-      if(List.mem_assoc pnm !g_tSb) then(
-            g_tSb := (pnm, ("T", (fst (snd(List.assoc pnm !g_tSb)), newpval))) :: (except (pnm, List.assoc pnm !g_tSb) !g_tSb)
-          )
-      )
-  );;
-
-let rec setParaVal paraname paravalue = (
-  if(List.mem_assoc paraname !vl) then(
-      vl := (paraname,("y", paravalue)) :: (except (paraname, List.assoc paraname !vl) !vl)
-    )
-  ) ;;
-
-
-
 let cal a op b = (
   match op with
   | "+" -> a + b
@@ -449,258 +160,6 @@ let cal a op b = (
   | "/" -> a / b
   | _ -> print_string ("unknown op.\n"); -1
   ) ;;
-
-let checkParameter name list = 
-if((List.mem_assoc name list)
-  && (fst(snd(List.assoc name list)) <> "nil")) then (
-    print_string (fst(snd(List.assoc name list)) ^ "\n");
-    true
-  )
-  else(
-      print_string (fst(snd(List.assoc name list)) ^ "\n");
-      false
-  )
-  ;;
-
-let checkPara paraid = (
-  if(List.mem_assoc paraid !g_tCmd) then(
-      let cmdtype = List.assoc paraid !g_tCmd in
-      match cmdtype with
-      "var" -> checkParameter (List.assoc paraid !g_lVar) !g_tSb
-      |"num" -> true
-      | _ -> print_string ("other type: " ^ cmdtype ^"\n");false
-    )
-  else(
-    print_int paraid;
-      print_string (" not in cmd.\n");
-      false
-    )
-  );;
-
-let handleHelp sta a = 
-  if(checkParameter sta !g_tSb) then(
-      let newid = generateId cmdId in (
-       g_lNum := (newid,snd(snd(List.assoc sta !g_tSb))) :: !g_lNum;
-       printNumList !g_lNum;
-       g_tCmd := (newid, "num") :: !g_tCmd;
-       printCmdList !g_tCmd;
-       newid
-      )
-    )
-  else(
-       g_tCmd := (a, "var") :: (except (a, (List.assoc a !g_tCmd)) !g_tCmd);
-       printCmdList !g_tCmd;
-       a
-      )
-    ;;
-
-let handleBinHelp inta = (
-      if(List.mem_assoc inta !g_tCmd) then(
-          let cmdtype = List.assoc inta !g_tCmd in
-          match cmdtype with
-          "var" -> (
-              if (checkParameter (List.assoc inta !g_lVar) !g_tSb) then
-                    (
-                      let newid = generateId cmdId in(
-                          print_string ((string_of_int inta) ^ " is  assigned.\n");
-                          g_lNum := (newid,getValueByCmd inta) :: !g_lNum;
-                          printNumList !g_lNum;
-                          g_tCmd := (newid, "num") :: !g_tCmd;
-                          printCmdList !g_tCmd;
-                          newid
-                      )
-                    )
-                else(
-                    print_string ((string_of_int inta) ^ " is not already assigned.\n");
-                    g_tCmd := (inta, "var") :: (except (inta, (List.assoc inta !g_tCmd)) !g_tCmd);
-                    printCmdList !g_tCmd;
-                    inta
-                  )
-            )
-          |"num" -> inta
-          | _ -> print_string ("wrong fid in handleBinHelp\n");-1
-        )
-      else(
-        print_string("not in cmd list.\n");
-        -1
-        )
-  );;
-
-let handleBinop a op b = (
-    printsb !g_tSb;
-    
-      if( (checkPara a) && (checkPara b)  ) then
-        (
-          print_string ("found all the parameter.\n");
-          cal (getValueByCmd a)  op (getValueByCmd b)
-        )
-      else(
-          print_string ("not found all the parameter.\n");
-          let i = generateId cmdId in(
-            g_tBop := (i,(op,(handleBinHelp a,handleBinHelp b))) :: !g_tBop;
-            g_tCmd := (i, "binop") :: !g_tCmd;
-            printCmdList !g_tCmd;
-            printBOP !g_tBop;
-            isCmdInProc := true;
-            i
-          )
-        )
-    
-  ) ;;
-
-let handleEqualHelper left right = (
-  if(left = right) then
-      (let i = generateId cmdId in(
-        g_tCmd := (i,"true") :: !g_tCmd;
-        printCmdList !g_tCmd;
-        i)
-      )
-    else
-      (let i = generateId cmdId in(
-        g_tCmd := (i,"false") :: !g_tCmd;
-        printCmdList !g_tCmd;
-        i)
-      )
-  )
-;;
-
-
-
-let handleLesserHelper left right = (
-  if(left < right) then
-      (let i = generateId cmdId in(
-        g_tCmd := (i,"true") :: !g_tCmd;
-        printCmdList !g_tCmd;
-        i))
-    else
-      (let i = generateId cmdId in(
-        g_tCmd := (i,"false") :: !g_tCmd;
-        printCmdList !g_tCmd;
-        i)
-      )
-  )
-;;
-
-let handleCmpHelper left right op= (
-  let (valLeft, valRight) = (getValueByCmd left, getValueByCmd right); in 
-  (
-    if(valLeft = -1) then 
-      (
-        print_string ("in handle lesser: not defined:\t");
-        isCmdInProc := true;
-        print_int left;
-        print_newline();
-        let i = generateId cmdId in(
-            g_tBop := (i,(op,(left,right))) :: !g_tBop;
-            g_tCmd := (i,"binop") :: !g_tCmd;
-            printCmdList !g_tCmd;
-            printBOP !g_tBop;
-            i
-          )
-        )
-      else(
-          if(valRight = -1) then 
-          (print_string ("in handle lesser: not defined:\t");
-            isCmdInProc := true;
-            print_int right;
-            let i = generateId cmdId in(
-                g_tBop := (i,(op,(left,right))) :: !g_tBop;
-                g_tCmd := (i,"binop") :: !g_tCmd;
-                printCmdList !g_tCmd;
-                printBOP !g_tBop;
-                i
-              )
-            )
-          else(
-            print_string ("in handle lesser: all defined:\t");
-            match op with
-              | "<" -> handleLesserHelper left right
-              | "=" -> handleEqualHelper left right
-        )
-      )
-    )
-  );;
-
-let handleCmp left right = (
-  match !cmpop with
-  | "=" -> handleCmpHelper left right "="
-  | "<" -> handleCmpHelper left right "<"
-  );;
-
-
-
-let handleIfElse cond thenClause elseClause = (
-    let newid = generateId cmdId in (
-        g_tCmd := (newid, "cond") :: !g_tCmd;
-        g_lCond := (newid,(cond,(thenClause, elseClause))) :: !g_lCond;
-        printCmdList !g_tCmd;
-        newid
-      )
-  );;
-
-let addObj o = (
-    let newid = generateId cmdId in(
-        g_tCmd := (newid, "obj") :: !g_tCmd;
-        printCmdList !g_tCmd;
-        g_lVar := (newid, o) :: !g_lVar;
-        newid
-      )
-  );;
-
-
-
-let handleField obj fld = (
-  let newvar = obj^"."^fld in (
-      if(List.mem_assoc newvar !g_tProc) then(
-          printProc !g_tProc;
-          procToRun := newvar;
-          snd(List.assoc newvar !g_tProc)
-        )
-      else(
-        if(List.mem_assoc newvar !g_tSb) then(
-            getIdByValue newvar !g_lVar
-          )
-        else(
-              let newid = generateId cmdId in (
-                g_tCmd := (newid, "field") :: !g_tCmd;
-                printCmdList !g_tCmd;
-                g_lVar := (newid,obj^"."^fld) :: !g_lVar;
-                if(List.mem_assoc newvar !g_tSb) then(
-                  )
-                else(
-                  g_tSb := (newvar,("U",("nil",0))) :: !g_tSb
-                  );
-                printsb !g_tSb;
-                newid
-              )
-          )
-        )
-    )
-  );;
-
-let handleFieldNotAssign fid ftype fvalue = (
-    if(List.mem_assoc fid !g_tCmd) then(
-        if(List.assoc fid !g_tCmd = "field") then (
-            let fname = List.assoc fid !g_lVar in(
-              if(List.mem_assoc fname !g_tSb) then
-                (
-                  match ftype with
-                  | "int" -> g_tSb := (fname,("D",(ftype,handleNum (getValueByCmd fvalue)))) :: (except (fname,List.assoc fname !g_tSb) !g_tSb)
-                  | "proc" -> g_tSb := (fname,("D",(ftype,fvalue))) :: (except (fname,List.assoc fname !g_tSb) !g_tSb)
-                  | _ -> print_string("no match in field assignment with:" ^ ftype ^ "\n"))
-                else(
-                    g_tSb := (fname,("U",(ftype,handleNum (getValueByCmd fvalue)))) :: !g_tSb;
-                  );
-                printsb !g_tSb
-              )
-          )
-        else(
-            print_string ("It should be field.\n")
-          )
-      );
-    0
-  );;
-
 (* new version *)
 let rec checkVarHeap p_var p_field l= (
   (* check if the variable with field is inside the heap *)
@@ -1152,14 +611,19 @@ let rec runCmd2 p_cmdid p_stackId p_bAtom = (
               g_bAtom := true;
               runCmd2 p_cmdid1 !g_nStackId !g_bAtom;
               runCmd2 p_cmdid2 !g_nStackId !g_bAtom;
+              print_string ("Before Merging:\n");
+              printHeap();
               mergeHeaps();
+              print_string ("After Merging:\n");
+              printHeap();  
               g_bAtom := false;
               0
             )
           )
         | "parallel" -> (
           let (p_cmdid1, p_cmdid2) = List.assoc p_cmdid !g_tParallel in(
-              if((!g_nHeapCmdId mod 2) = 1) then(
+              print_string ("current stack id:" ^ (string_of_int (!g_nStackId)) ^ "\n");
+              if((!g_nStackId mod 2) = 1) then(
                   runCmd2 p_cmdid1 !g_nStackId !g_bAtom;
                   runCmd2 p_cmdid2 !g_nStackId !g_bAtom;
                 )
@@ -1414,54 +878,54 @@ prog :
     list END                               { output "----prog------\n"; print_newline(); flush stdout; () }
 	
 list :
-    cmd SEMICOLON list                  { print_string ("----list----\n");  $3 }
-  | cmd                                 { print_string ("----list----\n"); $1 } 
+    cmd SEMICOLON list                      { print_string ("----list----\n");  $3 }
+  | cmd                                     { print_string ("----list----\n"); $1 } 
   
 cmd :
-    vardef SEMICOLON cmd                  {$3}
+    vardef SEMICOLON cmd                    {$3}
   | IFDEF boolexpr THENDEF cmd ELSEDEF cmd      {condEval $2 $4 $6}
-  | MALLOCDEF LPAREN VAR RPAREN         {output ("TODO MALLOC " ^ $3 ); createObj $3;0}
-  | SKIPDEF                             {skipEval;0}
-  | WHILEDEF boolexpr cmd               {whileEval $2 $3}
-  | LBRACKET cmd SEMICOLON cmd RBRACKET {seqEval $2 $4}
-  | assign                              {  $1 }
-  | reccall                             { $1}
+  | MALLOCDEF LPAREN VAR RPAREN             {output ("TODO MALLOC " ^ $3 ); createObj $3;0}
+  | SKIPDEF                                   {skipEval;0}
+  | WHILEDEF boolexpr cmd                   {whileEval $2 $3}
+  | LBRACKET cmd SEMICOLON cmd RBRACKET     {seqEval $2 $4}
+  | assign                                  {  $1 }
+  | reccall                                 { $1}
   | atom LPAREN cmd SEMICOLON cmd RPAREN           {g_bAtom := false; atomEval $3 $5}
-  | LBRACKET cmd PARALLEL cmd RBRACKET  {parallelEval $2 $4}
+  | LBRACKET cmd PARALLEL cmd RBRACKET      {parallelEval $2 $4}
 
 reccall :
-    expr LPAREN expr RPAREN   {output ((string_of_int $1) ^ "(" ^ (string_of_int $3) ^ ")"); (runReccall $1 $3)}
+    expr LPAREN expr RPAREN                 {output ((string_of_int $1) ^ "(" ^ (string_of_int $3) ^ ")"); (runReccall $1 $3)}
   
 assign :
-    VAR DOT FIELD ASSIGN expr  { assignEval (fieldEval $1 $3) $5}
-  | VAR ASSIGN expr  { (assignEval (varEval $1) $3) }
+    VAR DOT FIELD ASSIGN expr               { assignEval (fieldEval $1 $3) $5}
+  | VAR ASSIGN expr                         { (assignEval (varEval $1) $3) }
 
 boolexpr:
-    TRUEDEF               {createBool "true"}
-  | FALSEDEF              {createBool "false"}
-  | expr cmpexpr       {bexprEval $1 !cmpop $2}
+    TRUEDEF                                {createBool "true"}
+  | FALSEDEF                               {createBool "false"}
+  | expr cmpexpr                            {bexprEval $1 !cmpop $2}
 
 cmpexpr:
-    EQUAL expr       { cmpop := "="; $2}
-  | LIGHTER expr     { cmpop := "<"; $2}
+    EQUAL expr                              { cmpop := "="; $2}
+  | LIGHTER expr                             { cmpop := "<"; $2}
 	
 expr :
-    procdef cmd             {g_bInProc := false; g_sPara := ""; procDeclare $1 $2}
-  | expr PLUS expr           { g_stType := "int"; binopEval  $1 "+" $3 }
-  | expr MINUS expr          { g_stType := "int"; binopEval  $1 "-" $3 }
-  | expr TIMES expr          { $1 * $3 }
-  | expr DIV expr            { $1 / $3 }
-  | VAR DOT FIELD             {output ("find field:" ^ $1 ^ "." ^ $3); fieldEval $1 $3}
-  | VAR                    { varEval $1 }
-  | NUM                      { (output ("find num:\t" ^ (string_of_int $1))); g_stType := "int";(numEval $1) }
+    procdef cmd                             {g_bInProc := false; g_sPara := ""; procDeclare $1 $2}
+  | expr PLUS expr                          { binopEval  $1 "+" $3 }
+  | expr MINUS expr                         { binopEval  $1 "-" $3 }
+  | expr TIMES expr                         { $1 * $3 }
+  | expr DIV expr                           { $1 / $3 }
+  | VAR DOT FIELD                            {output ("find field:" ^ $1 ^ "." ^ $3); fieldEval $1 $3}
+  | VAR                                     { varEval $1 }
+  | NUM                                    { (output ("find num:\t" ^ (string_of_int $1))); (numEval $1) }
 
 vardef :
-    VARDEF VAR            {print_string ("find var:" ^ $2 ^ "\n"); varDeclare $2 ;0}
+    VARDEF VAR                              {print_string ("find var:" ^ $2 ^ "\n"); varDeclare $2 ;0}
 
 procdef :
-    PROCDEF VAR COLON   {print_string("proc def:\n"); g_bInProc := true; g_sPara := $2; $2}
+    PROCDEF VAR COLON                       {print_string("proc def:\n"); g_bInProc := true; g_sPara := $2; $2}
 
 atom :
-    ATOMDEF             {g_bAtom := true}
+    ATOMDEF                                  {g_bAtom := true}
 
 %% (* trailer *)
